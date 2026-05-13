@@ -50,8 +50,29 @@ function findNearest(pos: LatLng): Street | null {
   });
 }
 
+async function reverseGeocode(pos: LatLng): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${pos[0]}&lon=${pos[1]}&format=json`,
+      { headers: { "User-Agent": "eco-navigation/1.0" } }
+    );
+    const data = await res.json();
+    return data.address?.road ?? data.address?.suburb ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function matchStreet(road: string): Street | null {
+  if (!road) return null;
+  return NES_ZIONA_STREETS.find(s =>
+    s.name === road || s.name.includes(road) || road.includes(s.name)
+  ) ?? null;
+}
+
 export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
   const [street,      setStreet]      = useState<Street | null>(null);
+  const [displayAddr, setDisplayAddr] = useState<string>("");
   const [searching,   setSearching]   = useState(false);
   const [searchQ,     setSearchQ]     = useState("");
   const [itemType,    setItemType]    = useState("");
@@ -83,23 +104,33 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  async function detectFromPos(pos: LatLng) {
+    const road = await reverseGeocode(pos);
+    if (road) {
+      setDisplayAddr(road);
+      const matched = matchStreet(road) ?? findNearest(pos);
+      setStreet(matched);
+    } else {
+      const nearest = findNearest(pos);
+      setStreet(nearest);
+      setDisplayAddr(nearest?.name ?? "");
+    }
+    setLocating(false);
+  }
+
   useEffect(() => {
     if (navigator.geolocation) {
       setLocating(true);
       navigator.geolocation.getCurrentPosition(
-        ({ coords }) => {
-          const pos: LatLng = [coords.latitude, coords.longitude];
-          setStreet(findNearest(pos));
-          setLocating(false);
-        },
+        ({ coords }) => detectFromPos([coords.latitude, coords.longitude]),
         () => {
-          if (userPos) setStreet(findNearest(userPos));
-          setLocating(false);
+          if (userPos) detectFromPos(userPos);
+          else setLocating(false);
         },
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
     } else if (userPos) {
-      setStreet(findNearest(userPos));
+      detectFromPos(userPos);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -113,7 +144,7 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
     setSubmitting(true);
     setErr(null);
     const { error } = await insertReport({
-      street_name:      street.name,
+      street_name:      displayAddr || street.name,
       item_type:        itemType.trim(),
       item_description: description.trim() || null,
       item_condition:   condition || null,
@@ -177,7 +208,7 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
             <div style={s.pinWrapper}>
               <div style={s.pinBubble}>
                 <p style={s.pinTitle}>המיקום כאן</p>
-                <p style={s.pinAddr}>{locating ? "מאתר מיקום..." : (street?.name ?? "לא זוהה")}</p>
+                <p style={s.pinAddr}>{locating ? "מאתר מיקום..." : (displayAddr || street?.name || "לא זוהה")}</p>
                 <p style={s.pinCity}>Nes Ziona</p>
               </div>
               <div style={s.pinDot} />
@@ -192,7 +223,7 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
           {!searching ? (
             <div style={s.addrRow}>
               <span style={s.addrText}>
-                {locating ? "⏳ מאתר מיקום..." : (street?.name ?? "לא זוהתה")}
+                {locating ? "⏳ מאתר מיקום..." : (displayAddr || street?.name || "לא זוהתה")}
               </span>
               <button style={s.changeBtn} onClick={() => setSearching(true)}>שנה</button>
             </div>
@@ -211,7 +242,7 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
                     <div
                       key={r.name}
                       style={s.dropItem}
-                      onClick={() => { setStreet(r); setSearching(false); setSearchQ(""); }}
+                      onClick={() => { setStreet(r); setDisplayAddr(r.name); setSearching(false); setSearchQ(""); }}
                     >
                       <span style={{ fontWeight: 600 }}>{r.name}</span>
                       <span style={{ color: "#7880a0", fontSize: 11 }}>הוצאה: {r.takeout_day}</span>
