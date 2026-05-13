@@ -33,6 +33,19 @@ interface Props {
 
 // ── helpers ──
 
+function haversine(a: LatLng, b: LatLng): number {
+  const R = 6371000;
+  const φ1 = a[0] * Math.PI / 180, φ2 = b[0] * Math.PI / 180;
+  const Δφ = (b[0] - a[0]) * Math.PI / 180;
+  const Δλ = (b[1] - a[1]) * Math.PI / 180;
+  const x = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function fmtDist(m: number): string {
+  return m < 1000 ? `${Math.round(m)} מ'` : `${(m / 1000).toFixed(1)} ק"מ`;
+}
+
 function midpoint(coords: LatLng[]): LatLng {
   return coords[Math.floor(coords.length / 2)];
 }
@@ -245,6 +258,7 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
   const [routeInfo,   setRouteInfo]   = useState<RouteInfo | null>(null);
   const [status,      setStatus]      = useState<"loading" | "routing" | "ready" | "error">("loading");
   const [recentering, setRecentering] = useState(false);
+  const [navMode,     setNavMode]     = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
   const today = HEBREW_DAYS[new Date().getDay()];
@@ -299,6 +313,23 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
       setStatus("ready");
     })();
   }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── follow mode ──
+  useEffect(() => {
+    if (!navMode || !userPos || !mapRef.current) return;
+    mapRef.current.setView(userPos, Math.max(mapRef.current.getZoom(), 17), { animate: true, duration: 0.5 });
+  }, [userPos, navMode]);
+
+  // ── עצירה הבאה ──
+  const nextStop = useMemo(() => {
+    if (!userPos || !streetOrder.length || !streetsWithGeom.length) return null;
+    return streetOrder
+      .map(i => streetsWithGeom[i])
+      .filter(Boolean)
+      .reduce((closest, s) =>
+        haversine(userPos, midpoint(s.coords)) < haversine(userPos, midpoint(closest.coords)) ? s : closest
+      );
+  }, [userPos, streetOrder, streetsWithGeom]);
 
   // ── flyTo כשנבחר רחוב מהחיפוש ──
   useEffect(() => {
@@ -455,8 +486,20 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
           )}
         </button>
 
+        {/* בר ניווט פעיל */}
+        {navMode && nextStop && userPos && (
+          <div className="nav-bar" dir="rtl">
+            <span className="nav-icon">🧭</span>
+            <div className="nav-info">
+              <span className="nav-street">{nextStop.name}</span>
+              <span className="nav-dist">{fmtDist(haversine(userPos, midpoint(nextStop.coords)))}</span>
+            </div>
+            <button className="nav-stop-btn" onClick={() => setNavMode(false)}>✕</button>
+          </div>
+        )}
+
         {/* Badge יום */}
-        <div className="day-badge" dir="rtl">
+        <div className="day-badge" dir="rtl" style={navMode ? { top: 62 } : undefined}>
           <span className={`day-dot${status === "routing" ? " spinning" : ""}`} />
           {badgeText}
         </div>
@@ -469,19 +512,17 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
               <span className="route-sep">|</span>
               <span className="route-time">{routeInfo.time}</span>
             </div>
-            {routeInfo.gmapsUrl && (
-              <a
-                className="route-nav-btn"
-                href={routeInfo.gmapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-                </svg>
-                נווט
-              </a>
-            )}
+            <button
+              className={`route-nav-btn${navMode ? " nav-active" : ""}`}
+              onClick={() => {
+                setNavMode(v => !v);
+                if (!navMode && userPos && mapRef.current) {
+                  mapRef.current.flyTo(userPos, 17, { duration: 0.8 });
+                }
+              }}
+            >
+              {navMode ? "⏹ עצור ניווט" : "▶ נווט"}
+            </button>
           </div>
         )}
       </div>
@@ -539,6 +580,25 @@ const mapStyles = `
     text-decoration: none; transition: opacity 0.15s;
   }
   .route-nav-btn:hover { opacity: 0.9; }
+
+  .nav-bar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 1002;
+    background: #1a73e8; padding: 10px 16px;
+    display: flex; align-items: center; gap: 12px;
+    font-family: 'Heebo', sans-serif;
+    box-shadow: 0 2px 12px rgba(26,115,232,0.5);
+  }
+  .nav-icon { font-size: 22px; flex-shrink: 0; }
+  .nav-info { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .nav-street { font-size: 16px; font-weight: 800; color: #fff; }
+  .nav-dist   { font-size: 13px; color: rgba(255,255,255,0.75); font-weight: 600; }
+  .nav-stop-btn {
+    background: rgba(255,255,255,0.2); border: none; color: #fff;
+    border-radius: 50%; width: 28px; height: 28px; font-size: 14px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .route-nav-btn.nav-active { background: #ef4444; }
 
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
   @keyframes spin  { to { transform: rotate(360deg); } }
