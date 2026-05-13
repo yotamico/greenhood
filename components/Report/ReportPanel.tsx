@@ -13,6 +13,11 @@ interface Props {
 }
 
 const CONDITIONS = ["טוב", "בינוני", "ישן / שבור"];
+const CATEGORIES: { key: string; label: string; emoji: string }[] = [
+  { key: "ריהוט",   label: "ריהוט",   emoji: "🛋️" },
+  { key: "גרוטאות", label: "גרוטאות", emoji: "🔧" },
+  { key: "גזם",     label: "גזם",     emoji: "🌿" },
+];
 const HEBREW_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
 function hoursUntilDay(hebrewDay: string): number {
@@ -93,6 +98,7 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
   const [displayAddr, setDisplayAddr] = useState<string>("");
   const [searching,   setSearching]   = useState(false);
   const [searchQ,     setSearchQ]     = useState("");
+  const [category,    setCategory]    = useState("");
   const [itemType,    setItemType]    = useState("");
   const [description, setDescription] = useState("");
   const [condition,   setCondition]   = useState("");
@@ -163,6 +169,7 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
     const { error } = await insertReport({
       street_name:      displayAddr || street?.name || "",
       item_type:        itemType.trim(),
+      category:         category || null,
       item_description: description.trim() || null,
       item_condition:   condition || null,
       notes:            notes.trim() || null,
@@ -271,6 +278,34 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
               )}
             </div>
           )}
+        </div>
+
+        <div style={s.divider} />
+
+        {/* קטגוריה */}
+        <div style={s.section}>
+          <label style={s.fieldLabel}>קטגוריה</label>
+          <div style={s.condRow}>
+            {CATEGORIES.map(c => (
+              <button
+                key={c.key}
+                onClick={() => setCategory(category === c.key ? "" : c.key)}
+                style={{
+                  ...s.condChip,
+                  background: category === c.key ? "#1a73e8" : "#22263a",
+                  borderColor: category === c.key ? "#1a73e8" : "#2e3348",
+                  color:       category === c.key ? "#fff"    : "#7880a0",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 5,
+                }}
+              >
+                <span>{c.emoji}</span>
+                <span>{c.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={s.divider} />

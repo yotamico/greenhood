@@ -9,6 +9,7 @@ export interface Report {
   id: string;
   street_name: string;
   item_type: string;
+  category?: string | null;
   item_description?: string | null;
   item_condition?: string | null;
   notes?: string | null;
