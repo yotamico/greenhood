@@ -57,7 +57,11 @@ async function reverseGeocode(pos: LatLng): Promise<string> {
     const res = await fetch(`/api/geocode?lat=${pos[0]}&lng=${pos[1]}`, { signal: ctrl.signal });
     clearTimeout(t);
     const data = await res.json();
-    const road = data.address?.road ?? data.address?.pedestrian ?? data.address?.suburb ?? "";
+    const rawRoad = data.address?.road ?? data.address?.pedestrian ?? "";
+    // מספרי כביש (כמו "4311") — דלג אליהם וחפש שם שכונה
+    const road = rawRoad && /^\d+$/.test(rawRoad.trim())
+      ? (data.address?.suburb ?? data.address?.neighbourhood ?? data.address?.quarter ?? "")
+      : rawRoad;
     const city = data.address?.city ?? data.address?.town ?? data.address?.municipality ?? "";
     return road ? `${road}${city ? ", " + city : ""}` : city || "";
   } catch {
@@ -152,21 +156,21 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
     : [];
 
   async function handleSubmit() {
-    if (!street)   { setErr("יש לאתר כתובת"); return; }
+    if (!displayAddr && !street) { setErr("יש לאתר כתובת"); return; }
     if (!itemType.trim()) { setErr("יש לציין סוג חפץ"); return; }
     setSubmitting(true);
     setErr(null);
     const { error } = await insertReport({
-      street_name:      displayAddr || street.name,
+      street_name:      displayAddr || street?.name || "",
       item_type:        itemType.trim(),
       item_description: description.trim() || null,
       item_condition:   condition || null,
       notes:            notes.trim() || null,
       is_taken:         isTaken,
-      lat:              userPos?.[0] ?? street.lat,
-      lng:              userPos?.[1] ?? street.lng,
-      takeout_day:      street.takeout_day,
-      collection_day:   street.collection_day,
+      lat:              userPos?.[0] ?? street?.lat ?? null,
+      lng:              userPos?.[1] ?? street?.lng ?? null,
+      takeout_day:      street?.takeout_day ?? null,
+      collection_day:   street?.collection_day ?? null,
     });
     setSubmitting(false);
     if (error) { setErr("שגיאה בשליחה — נסה שוב"); return; }
@@ -228,11 +232,6 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
               <div style={s.pinShadow} />
             </div>
           </div>
-        </div>
-
-        {/* debug */}
-        <div style={{ background: "#f97316", color: "#fff", fontSize: 13, fontWeight: 700, padding: "6px 16px", direction: "ltr" }}>
-          GPS: {userPos ? `${userPos[0].toFixed(5)}, ${userPos[1].toFixed(5)}` : "NULL"} | addr: "{displayAddr || "empty"}"
         </div>
 
         {/* כתובת אוטומטית */}
@@ -411,10 +410,10 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
         {/* כפתור שליחה */}
         <button
           onClick={handleSubmit}
-          disabled={submitting || !street || !itemType.trim()}
+          disabled={submitting || (!street && !displayAddr) || !itemType.trim()}
           style={{
             ...s.submitBtn,
-            opacity: submitting || !street || !itemType.trim() ? 0.55 : 1,
+            opacity: submitting || (!street && !displayAddr) || !itemType.trim() ? 0.55 : 1,
           }}
         >
           {submitting ? "שולח..." : "שלח דיווח"}
