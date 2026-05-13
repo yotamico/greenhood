@@ -209,7 +209,13 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
 
       {/* כותרת */}
       <div style={s.header}>
-        <h2 style={{ ...s.title, textAlign: "center", flex: 1 }}>דווח על חפץ לפינוי</h2>
+        <button style={s.backBtn} onClick={onClose} aria-label="חזור">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+            <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <h2 style={s.title}>דווח על חפץ לפינוי</h2>
+        <div style={{ width: 36 }} />
       </div>
 
       <div style={s.scroll}>
