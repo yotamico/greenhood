@@ -54,14 +54,11 @@ async function reverseGeocode(pos: LatLng): Promise<string> {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);
-    const res = await fetch(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${pos[0]}&longitude=${pos[1]}&localityLanguage=he`,
-      { signal: ctrl.signal }
-    );
+    const res = await fetch(`/api/geocode?lat=${pos[0]}&lng=${pos[1]}`, { signal: ctrl.signal });
     clearTimeout(t);
     const data = await res.json();
-    const road = data.street ?? data.locality ?? "";
-    const city = data.city ?? data.principalSubdivision ?? "";
+    const road = data.address?.road ?? data.address?.pedestrian ?? data.address?.suburb ?? "";
+    const city = data.address?.city ?? data.address?.town ?? data.address?.municipality ?? "";
     return road ? `${road}${city ? ", " + city : ""}` : city || "";
   } catch {
     return "";
