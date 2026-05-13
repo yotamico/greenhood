@@ -289,27 +289,46 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
     const centers = streetsWithGeom.map(s => midpoint(s.coords));
 
     (async () => {
+      // שלב 1: קבל סדר אופטימלי מ-/trip (עם נקודות אמצע)
       const tripResult = await fetchOSRMTrip(centers, userPos);
-      if (tripResult) {
-        setOsrmRoute(tripResult.route);
-        setStreetOrder(tripResult.order);
-        const { km, time } = fmtRoute(tripResult.dist, tripResult.dur);
-        setRouteInfo({ km, time, gmapsUrl: buildGmapsUrl(streetsWithGeom, tripResult.order, userPos) });
-      } else {
+      const order = tripResult?.order ?? (() => {
         const startIdx = userPos
           ? centers.reduce((best, c, i) =>
               dist2(c, userPos) < dist2(centers[best], userPos) ? i : best, 0)
           : 0;
-        const order      = nearestNeighborTSP(centers, startIdx);
-        const orderedPts = order.map(i => centers[i]);
-        const result     = await fetchOSRMRoute(orderedPts);
-        if (result) {
-          setOsrmRoute(result.route);
-          const { km, time } = fmtRoute(result.dist, result.dur);
-          setRouteInfo({ km, time, gmapsUrl: buildGmapsUrl(streetsWithGeom, order, userPos) });
+        return nearestNeighborTSP(centers, startIdx);
+      })();
+
+      setStreetOrder(order);
+
+      // שלב 2: בנה מסלול מדויק עם נקודות תחילת/סיום של כל רחוב
+      const ordered = order.map(i => streetsWithGeom[i]).filter(Boolean);
+      const detailedWaypoints: LatLng[] = [];
+      if (userPos) detailedWaypoints.push(userPos);
+
+      let prevExit: LatLng | null = userPos ?? null;
+      ordered.forEach(s => {
+        const first = s.coords[0];
+        const last  = s.coords[s.coords.length - 1];
+        // כנס מהקצה הקרוב יותר לנקודה הקודמת
+        if (prevExit && dist2(prevExit, last) < dist2(prevExit, first)) {
+          detailedWaypoints.push(last, first);
+          prevExit = first;
+        } else {
+          detailedWaypoints.push(first, last);
+          prevExit = last;
         }
-        setStreetOrder(order);
-      }
+      });
+
+      const detailedResult = await fetchOSRMRoute(detailedWaypoints);
+      const routeGeom = detailedResult?.route ?? tripResult?.route ?? null;
+      setOsrmRoute(routeGeom);
+
+      const dist = detailedResult?.dist ?? tripResult?.dist ?? 0;
+      const dur  = detailedResult?.dur  ?? tripResult?.dur  ?? 0;
+      const { km, time } = fmtRoute(dist, dur);
+      setRouteInfo({ km, time, gmapsUrl: buildGmapsUrl(streetsWithGeom, order, userPos) });
+
       setStatus("ready");
     })();
   }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
