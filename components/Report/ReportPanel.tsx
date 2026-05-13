@@ -236,8 +236,15 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
           {!searching ? (
             <div style={s.addrRow}>
               <span style={s.addrText}>
-                {locating ? "⏳ מאתר מיקום..." : (displayAddr || street?.name || "לא זוהתה")}
+                {locating
+                  ? "⏳ מאתר מיקום..."
+                  : (displayAddr || street?.name || "לא זוהתה")}
               </span>
+              {!locating && (
+                <span style={{ fontSize: 10, color: "#7880a0", marginTop: 2, display: "block" }}>
+                  {userPos ? `📍 ${userPos[0].toFixed(4)}, ${userPos[1].toFixed(4)}` : "⚠️ אין GPS"}
+                </span>
+              )}
               <button style={s.changeBtn} onClick={() => setSearching(true)}>שנה</button>
             </div>
           ) : (
