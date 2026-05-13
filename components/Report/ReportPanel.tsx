@@ -230,6 +230,11 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
           </div>
         </div>
 
+        {/* debug */}
+        <div style={{ background: "#f97316", color: "#fff", fontSize: 13, fontWeight: 700, padding: "6px 16px", direction: "ltr" }}>
+          GPS: {userPos ? `${userPos[0].toFixed(5)}, ${userPos[1].toFixed(5)}` : "NULL"} | addr: "{displayAddr || "empty"}"
+        </div>
+
         {/* כתובת אוטומטית */}
         <div style={s.section}>
           <p style={s.sectionLabel}>כתובת אוטומטית:</p>
@@ -240,11 +245,6 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
                   ? "⏳ מאתר מיקום..."
                   : (displayAddr || street?.name || "לא זוהתה")}
               </span>
-              {!locating && (
-                <span style={{ fontSize: 10, color: "#7880a0", marginTop: 2, display: "block" }}>
-                  {userPos ? `📍 ${userPos[0].toFixed(4)}, ${userPos[1].toFixed(4)}` : "⚠️ אין GPS"}
-                </span>
-              )}
               <button style={s.changeBtn} onClick={() => setSearching(true)}>שנה</button>
             </div>
           ) : (
