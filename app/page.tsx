@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { NES_ZIONA_STREETS, Street } from "@/lib/nes-ziona-streets";
-import { getReports, Report } from "@/lib/supabase";
+import { getReports, deleteReport, updateReport, Report } from "@/lib/supabase";
 import { ReportPanel } from "@/components/Report/ReportPanel";
 
 type LatLng = [number, number];
@@ -33,6 +33,13 @@ function timeAgo(iso: string): string {
   return `לפני ${Math.floor(h / 24)} ימים`;
 }
 
+const EDIT_CATEGORIES = [
+  { key: "ריהוט",   emoji: "🛋️" },
+  { key: "גרוטאות", emoji: "🔧" },
+  { key: "גזם",     emoji: "🌿" },
+];
+const EDIT_CONDITIONS = ["טוב", "בינוני", "ישן / שבור"];
+
 const ITEM_BG: Record<string, string> = {
   "גזם":      "#14532d",
   "גרוטאות": "#7c2d12",
@@ -48,6 +55,13 @@ export default function HomePage() {
   const [showReport,    setShowReport]    = useState(false);
   const [filterType,    setFilterType]    = useState("all");
   const [reports,       setReports]       = useState<Report[]>([]);
+  const [editingReport, setEditingReport] = useState<Report | null>(null);
+  const [editType,      setEditType]      = useState("");
+  const [editCategory,  setEditCategory]  = useState("");
+  const [editCondition, setEditCondition] = useState("");
+  const [editNotes,     setEditNotes]     = useState("");
+  const [editIsTaken,   setEditIsTaken]   = useState(false);
+  const [editSaving,    setEditSaving]    = useState(false);
   const [userPos,       setUserPos]       = useState<LatLng | null>(null);
   const [targetStreet,  setTargetStreet]  = useState<Street | null>(null);
   const [searchQ,       setSearchQ]       = useState("");
@@ -75,6 +89,36 @@ export default function HomePage() {
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
+  function openEdit(r: Report) {
+    setEditingReport(r);
+    setEditType(r.item_type);
+    setEditCategory(r.category ?? "");
+    setEditCondition(r.item_condition ?? "");
+    setEditNotes(r.notes ?? "");
+    setEditIsTaken(r.is_taken ?? false);
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm("למחוק את הדיווח הזה?")) return;
+    await deleteReport(id);
+    setReports(prev => prev.filter(r => r.id !== id));
+  }
+
+  async function handleSaveEdit() {
+    if (!editingReport) return;
+    setEditSaving(true);
+    await updateReport(editingReport.id, {
+      item_type:      editType.trim(),
+      category:       editCategory || null,
+      item_condition: editCondition || null,
+      notes:          editNotes.trim() || null,
+      is_taken:       editIsTaken,
+    });
+    setEditSaving(false);
+    setEditingReport(null);
+    loadReports();
+  }
 
   const handleUserPos = useCallback((pos: LatLng) => setUserPos(pos), []);
 
@@ -196,20 +240,88 @@ export default function HomePage() {
                   <div key={r.id} className="history-card">
                     <div
                       className="history-badge"
-                      style={{ background: ITEM_BG[r.item_type] ?? "#1f2937" }}
+                      style={{ background: ITEM_BG[r.category ?? r.item_type] ?? "#1f2937" }}
                     >
-                      {ITEM_EMOJI[r.item_type] ?? "📦"}
+                      {ITEM_EMOJI[r.category ?? r.item_type] ?? "📦"}
                     </div>
                     <div className="history-info">
                       <p className="history-street">{r.street_name}</p>
                       <p className="history-meta">
-                        {r.item_type} · פינוי: {r.collection_day ?? "—"} · {timeAgo(r.created_at)}
+                        {r.item_type}{r.category ? ` · ${r.category}` : ""} · {timeAgo(r.created_at)}
                       </p>
+                    </div>
+                    <div className="history-actions">
+                      <button className="card-btn edit-btn" onClick={() => openEdit(r)}>✏️</button>
+                      <button className="card-btn del-btn"  onClick={() => handleDelete(r.id)}>🗑️</button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── מודל עריכה ── */}
+        {editingReport && (
+          <div className="edit-overlay" onClick={e => { if (e.target === e.currentTarget) setEditingReport(null); }}>
+            <div className="edit-sheet" dir="rtl">
+              <div className="edit-header">
+                <button className="edit-cancel" onClick={() => setEditingReport(null)}>ביטול</button>
+                <span className="edit-title">עריכת דיווח</span>
+                <button className="edit-save" onClick={handleSaveEdit} disabled={editSaving}>
+                  {editSaving ? "שומר..." : "שמור"}
+                </button>
+              </div>
+              <div className="edit-body">
+                <label className="edit-label">סוג החפץ</label>
+                <input
+                  className="edit-input"
+                  value={editType}
+                  onChange={e => setEditType(e.target.value)}
+                />
+                <label className="edit-label">קטגוריה</label>
+                <div className="edit-chips">
+                  {EDIT_CATEGORIES.map(c => (
+                    <button
+                      key={c.key}
+                      className={`edit-chip${editCategory === c.key ? " selected" : ""}`}
+                      onClick={() => setEditCategory(editCategory === c.key ? "" : c.key)}
+                    >
+                      {c.emoji} {c.key}
+                    </button>
+                  ))}
+                </div>
+                <label className="edit-label">מצב הפריט</label>
+                <div className="edit-chips">
+                  {EDIT_CONDITIONS.map(c => (
+                    <button
+                      key={c}
+                      className={`edit-chip${editCondition === c ? " selected" : ""}`}
+                      onClick={() => setEditCondition(editCondition === c ? "" : c)}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+                <label className="edit-label">הערות</label>
+                <textarea
+                  className="edit-input"
+                  rows={3}
+                  value={editNotes}
+                  onChange={e => setEditNotes(e.target.value)}
+                  style={{ resize: "none", lineHeight: 1.5 }}
+                />
+                <label className="edit-taken">
+                  <input
+                    type="checkbox"
+                    checked={editIsTaken}
+                    onChange={e => setEditIsTaken(e.target.checked)}
+                    style={{ accentColor: "#1a73e8", width: 18, height: 18 }}
+                  />
+                  <span>סמן אם נלקח</span>
+                </label>
+              </div>
+            </div>
           </div>
         )}
 
@@ -374,6 +486,62 @@ const globalStyles = `
   .history-info { flex: 1; min-width: 0; }
   .history-street { font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
   .history-meta   { font-size: 12px; color: var(--text-muted); margin: 3px 0 0; }
+  .history-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .card-btn {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; cursor: pointer;
+  }
+  .del-btn:hover { border-color: #ef4444; background: #1f0a0a; }
+  .edit-btn:hover { border-color: var(--blue); background: #0a1628; }
+
+  /* ── מודל עריכה ── */
+  .edit-overlay {
+    position: fixed; inset: 0; z-index: 2000;
+    background: rgba(0,0,0,0.6); display: flex; align-items: flex-end;
+  }
+  .edit-sheet {
+    width: 100%; background: var(--bg);
+    border-radius: 20px 20px 0 0;
+    max-height: 85dvh; display: flex; flex-direction: column;
+    animation: slideUp 0.25s cubic-bezier(0.32,0.72,0,1);
+  }
+  .edit-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    background: var(--surface); border-radius: 20px 20px 0 0;
+  }
+  .edit-title { font-size: 16px; font-weight: 800; color: var(--text); }
+  .edit-cancel {
+    background: none; border: none; color: var(--text-muted);
+    font-size: 14px; font-family: var(--font); cursor: pointer; padding: 4px 8px;
+  }
+  .edit-save {
+    background: var(--blue); border: none; color: #fff;
+    border-radius: 8px; padding: 6px 14px;
+    font-size: 14px; font-weight: 700; font-family: var(--font); cursor: pointer;
+  }
+  .edit-save:disabled { opacity: 0.5; }
+  .edit-body { overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .edit-label { font-size: 13px; font-weight: 700; color: #b0b8d4; }
+  .edit-input {
+    width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 11px 14px; font-size: 15px; color: var(--text);
+    font-family: var(--font); outline: none; box-sizing: border-box; direction: rtl;
+  }
+  .edit-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .edit-chip {
+    padding: 7px 14px; border-radius: 20px;
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text-muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: var(--font); transition: all 0.15s;
+  }
+  .edit-chip.selected { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .edit-taken {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 14px; font-weight: 600; color: #b0b8d4; cursor: pointer;
+  }
 
   /* ── טאב-בר ── */
   .tab-bar {

@@ -32,6 +32,19 @@ export async function insertReport(
   return { data: row as Report | null, error: error as Error | null };
 }
 
+export async function deleteReport(id: string): Promise<{ error: Error | null }> {
+  const { error } = await supabase.from("reports").delete().eq("id", id);
+  return { error: error as Error | null };
+}
+
+export async function updateReport(
+  id: string,
+  data: Partial<Omit<Report, "id" | "created_at">>
+): Promise<{ error: Error | null }> {
+  const { error } = await supabase.from("reports").update(data).eq("id", id);
+  return { error: error as Error | null };
+}
+
 export async function getReports(): Promise<Report[]> {
   const { data } = await supabase
     .from("reports")
