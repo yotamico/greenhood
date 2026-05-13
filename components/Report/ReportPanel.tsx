@@ -209,9 +209,9 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
 
       {/* כותרת */}
       <div style={s.header}>
-        <button style={s.backBtn} onClick={onClose} aria-label="חזור">
+        <button style={s.backBtn} onClick={onClose} aria-label="סגור">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
-            <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </button>
         <h2 style={s.title}>דווח על חפץ לפינוי</h2>

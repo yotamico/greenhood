@@ -209,7 +209,6 @@ export default function HomePage() {
           {/* ── פאנל דיווח — Bottom-sheet על המפה ── */}
           {showReport && (
             <div className="report-sheet" dir="rtl">
-              <div className="sheet-handle" />
               <ReportPanel
                 userPos={userPos}
                 onClose={() => setShowReport(false)}
