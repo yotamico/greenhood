@@ -207,19 +207,24 @@ function SetMapRef({ mapRef }: { mapRef: React.MutableRefObject<L.Map | null> })
   return null;
 }
 
-function LocateOnMount({ onLocated }: { onLocated: (pos: LatLng) => void }) {
+function LiveLocation({ onLocated }: { onLocated: (pos: LatLng) => void }) {
   const map = useMap();
   useEffect(() => {
     if (!navigator.geolocation) { map.flyTo(NES_ZIONA, 14, { duration: 1 }); return; }
-    navigator.geolocation.getCurrentPosition(
+    let firstFly = true;
+    const id = navigator.geolocation.watchPosition(
       ({ coords }) => {
         const pos: LatLng = [coords.latitude, coords.longitude];
         onLocated(pos);
-        map.flyTo(pos, 17, { duration: 1.2 });
+        if (firstFly) {
+          firstFly = false;
+          map.flyTo(pos, 17, { duration: 1.2 });
+        }
       },
-      () => map.flyTo(NES_ZIONA, 14, { duration: 1 }),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      () => { if (firstFly) map.flyTo(NES_ZIONA, 14, { duration: 1 }); },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
     );
+    return () => navigator.geolocation.clearWatch(id);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
@@ -310,21 +315,19 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
   function recenter() {
     const map = mapRef.current;
     if (!map) return;
+    if (userPos) {
+      map.flyTo(userPos, 17, { duration: 0.8 });
+      return;
+    }
     setRecentering(true);
-
-    // שימוש ב-locate() של Leaflet — מטפל אוטומטית ב-pan+zoom
     map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true, maximumAge: 0 });
-
     map.once("locationfound", (e: L.LocationEvent) => {
       const pos: LatLng = [e.latlng.lat, e.latlng.lng];
       setUserPos(pos);
       onUserPos?.(pos);
       setRecentering(false);
     });
-
-    map.once("locationerror", () => {
-      setRecentering(false);
-    });
+    map.once("locationerror", () => setRecentering(false));
   }
 
   function handleLocated(pos: LatLng) {
@@ -353,7 +356,7 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
           zoomControl={false}
         >
           <SetMapRef mapRef={mapRef} />
-          <LocateOnMount onLocated={handleLocated} />
+          <LiveLocation onLocated={handleLocated} />
 
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
