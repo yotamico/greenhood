@@ -55,6 +55,8 @@ export default function HomePage() {
   const [showReport,    setShowReport]    = useState(false);
   const [filterType,    setFilterType]    = useState("all");
   const [reports,       setReports]       = useState<Report[]>([]);
+  const [sheetDragY,    setSheetDragY]    = useState(0);
+  const dragStartY = useRef(0);
   const [editingReport, setEditingReport] = useState<Report | null>(null);
   const [editType,      setEditType]      = useState("");
   const [editCategory,  setEditCategory]  = useState("");
@@ -118,6 +120,19 @@ export default function HomePage() {
     setEditSaving(false);
     setEditingReport(null);
     loadReports();
+  }
+
+  function onHandleTouchStart(e: React.TouchEvent) {
+    dragStartY.current = e.touches[0].clientY;
+    setSheetDragY(0);
+  }
+  function onHandleTouchMove(e: React.TouchEvent) {
+    const dy = e.touches[0].clientY - dragStartY.current;
+    if (dy > 0) setSheetDragY(dy);
+  }
+  function onHandleTouchEnd() {
+    if (sheetDragY > 90) setShowReport(false);
+    setSheetDragY(0);
   }
 
   const handleUserPos = useCallback((pos: LatLng) => setUserPos(pos), []);
@@ -208,8 +223,18 @@ export default function HomePage() {
 
           {/* ── פאנל דיווח — Bottom-sheet על המפה ── */}
           {showReport && (
-            <div className="report-sheet" dir="rtl">
-              <div className="sheet-handle" />
+            <div
+              className="report-sheet"
+              dir="rtl"
+              style={{ transform: sheetDragY > 0 ? `translateY(${sheetDragY}px)` : undefined, transition: sheetDragY === 0 ? "transform 0.25s ease" : "none" }}
+            >
+              <div
+                className="sheet-handle"
+                onTouchStart={onHandleTouchStart}
+                onTouchMove={onHandleTouchMove}
+                onTouchEnd={onHandleTouchEnd}
+                style={{ cursor: "grab", padding: "12px 0" }}
+              />
               <ReportPanel
                 userPos={userPos}
                 onClose={() => setShowReport(false)}
