@@ -340,7 +340,7 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
 
   const visibleReports = filterType === "all"
     ? reports
-    : reports.filter(r => r.item_type === filterType);
+    : reports.filter(r => (r.category ?? r.item_type) === filterType);
 
   return (
     <>
@@ -414,11 +414,14 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
             <Marker
               key={r.id}
               position={[r.lat, r.lng]}
-              icon={reportIcon(r.item_type)}
+              icon={reportIcon(r.category ?? r.item_type)}
             >
               <Popup className="eco-popup">
                 <div className="popup-inner" dir="rtl">
-                  <p className="popup-chip">{REPORT_EMOJI[r.item_type]} {r.item_type}</p>
+                  <p className="popup-chip">
+                    {REPORT_EMOJI[r.category ?? r.item_type] ?? "📦"} {r.item_type}
+                    {r.category ? ` · ${r.category}` : ""}
+                  </p>
                   <h3 className="popup-street">{r.street_name}</h3>
                   <p className="popup-sub">
                     פינוי: {r.collection_day ?? "—"} · {timeAgo(r.created_at)}
