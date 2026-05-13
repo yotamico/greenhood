@@ -2,13 +2,15 @@
 
 import { useState, useEffect, useRef } from "react";
 import { NES_ZIONA_STREETS, Street } from "@/lib/nes-ziona-streets";
-import { insertReport } from "@/lib/supabase";
+import { insertReport, logActivity } from "@/lib/supabase";
 
 type LatLng = [number, number];
 
 interface Props {
-  userPos: LatLng | null;
-  onClose: () => void;
+  userPos:    LatLng | null;
+  userId?:    string;
+  userEmail?: string;
+  onClose:    () => void;
   onSubmitted: () => void;
 }
 
@@ -93,7 +95,7 @@ function findNearestInRange(pos: LatLng): Street | null {
   return dist < 0.01 ? best : null; // ~1 ק"מ
 }
 
-export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
+export function ReportPanel({ userPos, userId, userEmail, onClose, onSubmitted }: Props) {
   const [street,      setStreet]      = useState<Street | null>(null);
   const [displayAddr, setDisplayAddr] = useState<string>("");
   const [searching,   setSearching]   = useState(false);
@@ -185,9 +187,14 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
       lng:              userPos?.[1] ?? street?.lng ?? null,
       takeout_day:      street?.takeout_day ?? null,
       collection_day:   street?.collection_day ?? null,
+      user_id:          userId ?? null,
+      user_email:       userEmail ?? null,
     });
     setSubmitting(false);
     if (error) { setErr("שגיאה בשליחה — נסה שוב"); return; }
+    if (userId && userEmail) {
+      await logActivity(userId, userEmail, "report", { item_type: itemType.trim(), category: category || null });
+    }
     setSuccess(true);
     setTimeout(() => { onSubmitted(); onClose(); }, 2200);
   }

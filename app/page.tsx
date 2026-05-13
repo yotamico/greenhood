@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { NES_ZIONA_STREETS, Street } from "@/lib/nes-ziona-streets";
-import { getReports, deleteReport, updateReport, Report } from "@/lib/supabase";
+import { getReports, deleteReport, updateReport, Report, getCurrentUser, signOut, logActivity } from "@/lib/supabase";
+import { useRouter } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { ReportPanel } from "@/components/Report/ReportPanel";
 
 type LatLng = [number, number];
@@ -50,7 +52,12 @@ const ITEM_EMOJI: Record<string, string> = {
   "גזם": "🌿", "גרוטאות": "🔧", "ריהוט": "🛋️", "אחר": "📦",
 };
 
+const ADMIN_EMAIL = "yotamico@gmail.com";
+
 export default function HomePage() {
+  const router = useRouter();
+  const [currentUser,   setCurrentUser]   = useState<User | null>(null);
+  const [authReady,     setAuthReady]     = useState(false);
   const [activeTab,     setActiveTab]     = useState<Tab>("map");
   const [showReport,    setShowReport]    = useState(false);
   const [filterType,    setFilterType]    = useState("all");
@@ -99,12 +106,20 @@ export default function HomePage() {
     ? NES_ZIONA_STREETS.filter(s => s.name.includes(searchQ)).slice(0, 6)
     : [];
 
+  // ── בדיקת auth ──
+  useEffect(() => {
+    getCurrentUser().then(user => {
+      if (!user) { router.replace("/login"); return; }
+      setCurrentUser(user);
+      setAuthReady(true);
+      loadReports();
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function loadReports() {
     const data = await getReports();
     setReports(data);
   }
-
-  useEffect(() => { loadReports(); }, []);
 
   // סגירת חיפוש בלחיצה מחוץ
   useEffect(() => {
@@ -154,6 +169,16 @@ export default function HomePage() {
     setSearchQ(s.name);
     setSearchOpen(false);
     setActiveTab("map");
+  }
+
+  if (!authReady) {
+    return (
+      <div style={{ minHeight: "100dvh", background: "#0f1117", display: "flex",
+        alignItems: "center", justifyContent: "center", color: "#7880a0",
+        fontFamily: "'Heebo', sans-serif", fontSize: 16 }}>
+        טוען...
+      </div>
+    );
   }
 
   return (
@@ -244,6 +269,8 @@ export default function HomePage() {
               />
               <ReportPanel
                 userPos={userPos}
+                userId={currentUser?.id}
+                userEmail={currentUser?.email}
                 onClose={() => setShowReport(false)}
                 onSubmitted={() => { loadReports(); setShowReport(false); }}
               />
@@ -370,6 +397,14 @@ export default function HomePage() {
               dangerouslySetInnerHTML={{ __html: `${t.icon}<span class="tab-label">${t.label}</span>` }}
             />
           ))}
+          {currentUser?.email === ADMIN_EMAIL && (
+            <button className="tab-btn" onClick={() => router.push("/admin")}
+              dangerouslySetInnerHTML={{ __html: `${adminIcon}<span class="tab-label">ניהול</span>` }}
+            />
+          )}
+          <button className="tab-btn" onClick={async () => { await signOut(); router.replace("/login"); }}
+            dangerouslySetInnerHTML={{ __html: `${logoutIcon}<span class="tab-label">יציאה</span>` }}
+          />
         </nav>
 
       </div>
@@ -388,6 +423,14 @@ const reportIcon = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none">
 
 const historyIcon = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none">
   <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+</svg>`;
+
+const adminIcon = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+  <path d="M9 17v-2m3 2v-4m3 4v-6M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+</svg>`;
+
+const logoutIcon = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+  <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
 </svg>`;
 
 // ── סגנונות גלובליים ──

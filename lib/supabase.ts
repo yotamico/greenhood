@@ -5,6 +5,74 @@ export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// ── Auth ──
+export async function signIn(email: string, password: string) {
+  return supabase.auth.signInWithPassword({ email, password });
+}
+
+export async function signUp(email: string, password: string) {
+  return supabase.auth.signUp({ email, password });
+}
+
+export async function signOut() {
+  return supabase.auth.signOut();
+}
+
+export async function getCurrentUser() {
+  const { data: { user } } = await supabase.auth.getUser();
+  return user;
+}
+
+// ── Activity logging ──
+export async function logActivity(
+  userId: string,
+  userEmail: string,
+  action: string,
+  metadata?: Record<string, unknown>
+) {
+  await supabase.from("activity_logs").insert([{
+    user_id:    userId,
+    user_email: userEmail,
+    action,
+    metadata:   metadata ?? null,
+  }]);
+}
+
+// ── Admin ──
+export interface UserProfile {
+  id: string;
+  email: string;
+  display_name?: string | null;
+  created_at: string;
+}
+
+export interface ActivityLog {
+  id: string;
+  user_id: string;
+  user_email: string;
+  action: string;
+  metadata?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export async function getUserProfiles(): Promise<UserProfile[]> {
+  const { data } = await supabase
+    .from("user_profiles")
+    .select("*")
+    .order("created_at", { ascending: false });
+  return (data ?? []) as UserProfile[];
+}
+
+export async function getActivityLogs(limit = 200): Promise<ActivityLog[]> {
+  const { data } = await supabase
+    .from("activity_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as ActivityLog[];
+}
+
+// ── Reports ──
 export interface Report {
   id: string;
   street_name: string;
@@ -19,6 +87,8 @@ export interface Report {
   takeout_day: string | null;
   collection_day: string | null;
   created_at: string;
+  user_id?: string | null;
+  user_email?: string | null;
 }
 
 export async function insertReport(
