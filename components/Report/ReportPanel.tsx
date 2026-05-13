@@ -55,14 +55,14 @@ async function reverseGeocode(pos: LatLng): Promise<string> {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${pos[0]}&lon=${pos[1]}&format=json&accept-language=he`,
-      { headers: { "User-Agent": "eco-navigation/1.0" }, signal: ctrl.signal }
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${pos[0]}&longitude=${pos[1]}&localityLanguage=he`,
+      { signal: ctrl.signal }
     );
     clearTimeout(t);
     const data = await res.json();
-    const road = data.address?.road ?? data.address?.pedestrian ?? data.address?.suburb ?? "";
-    const city = data.address?.city ?? data.address?.town ?? "";
-    return road ? `${road}${city ? ", " + city : ""}` : "";
+    const road = data.street ?? data.locality ?? "";
+    const city = data.city ?? data.principalSubdivision ?? "";
+    return road ? `${road}${city ? ", " + city : ""}` : city || "";
   } catch {
     return "";
   }
