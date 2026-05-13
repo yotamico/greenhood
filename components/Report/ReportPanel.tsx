@@ -84,7 +84,7 @@ function findNearestInRange(pos: LatLng): Street | null {
     ((b.lat! - pos[0]) ** 2 + (b.lng! - pos[1]) ** 2) ? s : b
   );
   const dist = Math.sqrt((best.lat! - pos[0]) ** 2 + (best.lng! - pos[1]) ** 2);
-  return dist < 0.03 ? best : null; // ~3 ק"מ
+  return dist < 0.01 ? best : null; // ~1 ק"מ
 }
 
 export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
@@ -135,18 +135,18 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
   }
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      setLocating(true);
+    setLocating(true);
+    if (userPos) {
+      // יש כבר מיקום מהמפה — השתמש בו ישירות
+      detectFromPos(userPos);
+    } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         ({ coords }) => detectFromPos([coords.latitude, coords.longitude]),
-        () => {
-          if (userPos) detectFromPos(userPos);
-          else setLocating(false);
-        },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        () => setLocating(false),
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
       );
-    } else if (userPos) {
-      detectFromPos(userPos);
+    } else {
+      setLocating(false);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
