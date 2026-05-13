@@ -141,6 +141,12 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
     setLocating(false);
   }
 
+  // פתח מצלמה אוטומטית בטעינה
+  useEffect(() => {
+    const t = setTimeout(() => fileInputRef.current?.click(), 300);
+    return () => clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     setLocating(true);
     if (userPos) {
@@ -164,6 +170,7 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
   async function handleSubmit() {
     if (!displayAddr && !street) { setErr("יש לאתר כתובת"); return; }
     if (!itemType.trim()) { setErr("יש לציין סוג חפץ"); return; }
+    if (!photoFile) { setErr("יש לצרף תמונה של הפריט"); return; }
     setSubmitting(true);
     setErr(null);
     const { error } = await insertReport({
@@ -445,10 +452,10 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
         {/* כפתור שליחה */}
         <button
           onClick={handleSubmit}
-          disabled={submitting || (!street && !displayAddr) || !itemType.trim()}
+          disabled={submitting || (!street && !displayAddr) || !itemType.trim() || !photoFile}
           style={{
             ...s.submitBtn,
-            opacity: submitting || (!street && !displayAddr) || !itemType.trim() ? 0.55 : 1,
+            opacity: submitting || (!street && !displayAddr) || !itemType.trim() || !photoFile ? 0.55 : 1,
           }}
         >
           {submitting ? "שולח..." : "שלח דיווח"}
