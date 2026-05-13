@@ -66,7 +66,34 @@ export default function HomePage() {
   const [targetStreet,  setTargetStreet]  = useState<Street | null>(null);
   const [searchQ,       setSearchQ]       = useState("");
   const [searchOpen,    setSearchOpen]    = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
+  const searchRef  = useRef<HTMLDivElement>(null);
+  const sheetRef   = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef<number | null>(null);
+
+  function onHandleTouchStart(e: React.TouchEvent) {
+    dragStartY.current = e.touches[0].clientY;
+    if (sheetRef.current) sheetRef.current.style.transition = "none";
+  }
+
+  function onHandleTouchMove(e: React.TouchEvent) {
+    if (dragStartY.current === null) return;
+    const dy = e.touches[0].clientY - dragStartY.current;
+    if (dy > 0 && sheetRef.current) {
+      sheetRef.current.style.transform = `translateY(${dy}px)`;
+    }
+  }
+
+  function onHandleTouchEnd(e: React.TouchEvent) {
+    if (dragStartY.current === null) return;
+    const dy = e.changedTouches[0].clientY - dragStartY.current;
+    dragStartY.current = null;
+    if (dy > 80) {
+      setShowReport(false);
+    } else if (sheetRef.current) {
+      sheetRef.current.style.transition = "";
+      sheetRef.current.style.transform  = "";
+    }
+  }
 
   const searchResults = searchQ.length >= 2
     ? NES_ZIONA_STREETS.filter(s => s.name.includes(searchQ)).slice(0, 6)
@@ -208,7 +235,13 @@ export default function HomePage() {
 
           {/* ── פאנל דיווח — Bottom-sheet על המפה ── */}
           {showReport && (
-            <div className="report-sheet" dir="rtl">
+            <div className="report-sheet" ref={sheetRef} dir="rtl">
+              <div
+                className="sheet-handle"
+                onTouchStart={onHandleTouchStart}
+                onTouchMove={onHandleTouchMove}
+                onTouchEnd={onHandleTouchEnd}
+              />
               <ReportPanel
                 userPos={userPos}
                 onClose={() => setShowReport(false)}
@@ -590,9 +623,13 @@ const globalStyles = `
     display: flex; flex-direction: column;
   }
   .sheet-handle {
-    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-    width: 36px; height: 4px; border-radius: 2px;
-    background: #2e3348; z-index: 1;
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 28px; z-index: 10; cursor: grab;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sheet-handle::after {
+    content: ''; width: 36px; height: 4px;
+    border-radius: 2px; background: #2e3348;
   }
   @keyframes slideUp {
     from { transform: translateY(100%); }
