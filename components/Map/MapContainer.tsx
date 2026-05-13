@@ -301,23 +301,11 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
 
       setStreetOrder(order);
 
-      // שלב 2: בנה מסלול מדויק עם נקודות תחילת/סיום של כל רחוב
-      const ordered = order.map(i => streetsWithGeom[i]).filter(Boolean);
+      // שלב 2: מסלול עם נקודות אמצע בלבד — OSRM קובע כיוון לפי כללי תנועה
       const detailedWaypoints: LatLng[] = [];
       if (userPos) detailedWaypoints.push(userPos);
-
-      let prevExit: LatLng | null = userPos ?? null;
-      ordered.forEach(s => {
-        const first = s.coords[0];
-        const last  = s.coords[s.coords.length - 1];
-        // כנס מהקצה הקרוב יותר לנקודה הקודמת
-        if (prevExit && dist2(prevExit, last) < dist2(prevExit, first)) {
-          detailedWaypoints.push(last, first);
-          prevExit = first;
-        } else {
-          detailedWaypoints.push(first, last);
-          prevExit = last;
-        }
+      order.map(i => streetsWithGeom[i]).filter(Boolean).forEach(s => {
+        detailedWaypoints.push(midpoint(s.coords));
       });
 
       const detailedResult = await fetchOSRMRoute(detailedWaypoints);
