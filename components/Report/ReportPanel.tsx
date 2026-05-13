@@ -52,12 +52,17 @@ function findNearest(pos: LatLng): Street | null {
 
 async function reverseGeocode(pos: LatLng): Promise<string> {
   try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8000);
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${pos[0]}&lon=${pos[1]}&format=json`,
-      { headers: { "User-Agent": "eco-navigation/1.0" } }
+      `https://nominatim.openstreetmap.org/reverse?lat=${pos[0]}&lon=${pos[1]}&format=json&accept-language=he`,
+      { headers: { "User-Agent": "eco-navigation/1.0" }, signal: ctrl.signal }
     );
+    clearTimeout(t);
     const data = await res.json();
-    return data.address?.road ?? data.address?.suburb ?? "";
+    const road = data.address?.road ?? data.address?.pedestrian ?? data.address?.suburb ?? "";
+    const city = data.address?.city ?? data.address?.town ?? "";
+    return road ? `${road}${city ? ", " + city : ""}` : "";
   } catch {
     return "";
   }
@@ -68,6 +73,18 @@ function matchStreet(road: string): Street | null {
   return NES_ZIONA_STREETS.find(s =>
     s.name === road || s.name.includes(road) || road.includes(s.name)
   ) ?? null;
+}
+
+// מחזיר רחוב רק אם המרחק ≤ 3 ק"מ
+function findNearestInRange(pos: LatLng): Street | null {
+  const streets = NES_ZIONA_STREETS.filter(s => s.lat != null && s.lng != null);
+  if (!streets.length) return null;
+  const best = streets.reduce((b, s) =>
+    ((s.lat! - pos[0]) ** 2 + (s.lng! - pos[1]) ** 2) <
+    ((b.lat! - pos[0]) ** 2 + (b.lng! - pos[1]) ** 2) ? s : b
+  );
+  const dist = Math.sqrt((best.lat! - pos[0]) ** 2 + (best.lng! - pos[1]) ** 2);
+  return dist < 0.03 ? best : null; // ~3 ק"מ
 }
 
 export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
@@ -108,10 +125,9 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
     const road = await reverseGeocode(pos);
     if (road) {
       setDisplayAddr(road);
-      const matched = matchStreet(road) ?? findNearest(pos);
-      setStreet(matched);
+      setStreet(matchStreet(road) ?? findNearestInRange(pos));
     } else {
-      const nearest = findNearest(pos);
+      const nearest = findNearestInRange(pos);
       setStreet(nearest);
       setDisplayAddr(nearest?.name ?? "");
     }
