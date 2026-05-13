@@ -84,11 +84,7 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
   }
 
   useEffect(() => {
-    if (userPos && !street) {
-      setStreet(findNearest(userPos));
-      return;
-    }
-    if (!userPos && !street && navigator.geolocation) {
+    if (navigator.geolocation) {
       setLocating(true);
       navigator.geolocation.getCurrentPosition(
         ({ coords }) => {
@@ -96,11 +92,16 @@ export function ReportPanel({ userPos, onClose, onSubmitted }: Props) {
           setStreet(findNearest(pos));
           setLocating(false);
         },
-        () => setLocating(false),
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }
+        () => {
+          if (userPos) setStreet(findNearest(userPos));
+          setLocating(false);
+        },
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
+    } else if (userPos) {
+      setStreet(findNearest(userPos));
     }
-  }, [userPos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const searchResults = searchQ.length >= 2
     ? NES_ZIONA_STREETS.filter(s => s.name.includes(searchQ)).slice(0, 6)
