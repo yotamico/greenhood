@@ -25,10 +25,11 @@ interface StreetWithGeom { name: string; collection_day: string; coords: LatLng[
 interface RouteInfo { km: string; time: string; gmapsUrl: string }
 
 interface Props {
-  filterType:    string;
-  reports:       Report[];
-  targetStreet?: Street | null;
-  onUserPos?:    (pos: LatLng) => void;
+  filterType:   string;
+  reports:      Report[];
+  onUserPos?:   (pos: LatLng) => void;
+  selectedDay?:  string;
+  selectedType?: "takeout" | "collection";
 }
 
 // ── helpers ──
@@ -250,7 +251,7 @@ function timeAgo(iso: string): string {
 }
 
 // ── קומפוננט ראשי ──
-export default function EcoMap({ filterType, reports, targetStreet, onUserPos }: Props) {
+export default function EcoMap({ filterType, reports, onUserPos, selectedDay, selectedType }: Props) {
   const [userPos,     setUserPos]     = useState<LatLng | null>(null);
   const [geomMap,     setGeomMap]     = useState<GeomMap>({});
   const [osrmRoute,   setOsrmRoute]   = useState<LatLng[] | null>(null);
@@ -261,11 +262,26 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
   const [navMode,     setNavMode]     = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
-  const today = HEBREW_DAYS[new Date().getDay()];
+  const today      = HEBREW_DAYS[new Date().getDay()];
+  const activeDay  = selectedDay ?? today;
+  const activeType = selectedType ?? "takeout";
+
   const todayStreets = useMemo(
-    () => NES_ZIONA_STREETS.filter(s => s.takeout_day === today),
-    [today]
+    () => NES_ZIONA_STREETS.filter(s =>
+      activeType === "collection"
+        ? s.collection_day === activeDay
+        : s.takeout_day    === activeDay
+    ),
+    [activeDay, activeType]  // eslint-disable-line react-hooks/exhaustive-deps
   );
+
+  // reset מסלול כשמשתנה יום/סוג
+  useEffect(() => {
+    setStatus("routing");
+    setOsrmRoute(null);
+    setRouteInfo(null);
+    setStreetOrder([]);
+  }, [activeDay, activeType]);
 
   useEffect(() => {
     fetch("/nes-ziona-geometry.json")
@@ -338,17 +354,6 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
       );
   }, [userPos, streetOrder, streetsWithGeom]);
 
-  // ── flyTo כשנבחר רחוב מהחיפוש ──
-  useEffect(() => {
-    if (!targetStreet || !mapRef.current) return;
-    const geom = geomMap[targetStreet.name];
-    const pos: LatLng | null = geom?.length
-      ? midpoint(geom)
-      : targetStreet.lat && targetStreet.lng
-        ? [targetStreet.lat, targetStreet.lng]
-        : null;
-    if (pos) mapRef.current.flyTo(pos, 16, { duration: 0.8 });
-  }, [targetStreet, geomMap]);
 
   function recenter() {
     const map = mapRef.current;
@@ -373,11 +378,12 @@ export default function EcoMap({ filterType, reports, targetStreet, onUserPos }:
     onUserPos?.(pos);
   }
 
+  const typeLabel = activeType === "collection" ? "פינוי" : "הוצאה";
   const badgeText =
     status === "loading"  ? "טוען נתונים..." :
     status === "routing"  ? "מחשב מסלול..." :
     status === "error"    ? "שגיאה בטעינה" :
-    `${streetsWithGeom.length} עצירות • ${today}`;
+    `${streetsWithGeom.length} עצירות · ${typeLabel} ${activeDay}`;
 
   const visibleReports = filterType === "all"
     ? reports

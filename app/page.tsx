@@ -28,6 +28,9 @@ const FILTER_OPTIONS = [
   { key: "ריהוט",   label: "ריהוט",     emoji: "🛋️" },
 ];
 
+const HEBREW_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const todayHebrew = HEBREW_DAYS[new Date().getDay()];
+
 function timeAgo(iso: string): string {
   const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
   if (h < 1)  return "פחות משעה";
@@ -70,10 +73,8 @@ export default function HomePage() {
   const [editIsTaken,   setEditIsTaken]   = useState(false);
   const [editSaving,    setEditSaving]    = useState(false);
   const [userPos,       setUserPos]       = useState<LatLng | null>(null);
-  const [targetStreet,  setTargetStreet]  = useState<Street | null>(null);
-  const [searchQ,       setSearchQ]       = useState("");
-  const [searchOpen,    setSearchOpen]    = useState(false);
-  const searchRef  = useRef<HTMLDivElement>(null);
+  const [selectedDay,   setSelectedDay]   = useState(todayHebrew);
+  const [selectedType,  setSelectedType]  = useState<"takeout" | "collection">("takeout");
   const sheetRef   = useRef<HTMLDivElement>(null);
   const dragStartY = useRef<number | null>(null);
 
@@ -121,16 +122,6 @@ export default function HomePage() {
     setReports(data);
   }
 
-  // סגירת חיפוש בלחיצה מחוץ
-  useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSearchOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, []);
 
   function openEdit(r: Report) {
     setEditingReport(r);
@@ -164,12 +155,6 @@ export default function HomePage() {
 
   const handleUserPos = useCallback((pos: LatLng) => setUserPos(pos), []);
 
-  function selectStreet(s: Street) {
-    setTargetStreet(s);
-    setSearchQ(s.name);
-    setSearchOpen(false);
-    setActiveTab("map");
-  }
 
   if (!authReady) {
     return (
@@ -194,39 +179,35 @@ export default function HomePage() {
             <MapComponent
               filterType={filterType}
               reports={reports}
-              targetStreet={targetStreet}
               onUserPos={handleUserPos}
+              selectedDay={selectedDay}
+              selectedType={selectedType}
             />
           </div>
 
-          {/* סרגל חיפוש */}
-          <div className="search-overlay" ref={searchRef}>
-            <div className="search-box">
-              <svg className="search-icon" viewBox="0 0 24 24" fill="none">
-                <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2"/>
-                <path d="M16.5 16.5 21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              <input
-                className="search-input"
-                placeholder="חפש רחוב..."
-                value={searchQ}
-                onChange={e => { setSearchQ(e.target.value); setSearchOpen(true); }}
-                onFocus={() => searchQ.length >= 2 && setSearchOpen(true)}
-              />
-              {searchQ && (
-                <button className="search-clear" onClick={() => { setSearchQ(""); setSearchOpen(false); setTargetStreet(null); }}>✕</button>
-              )}
+          {/* בוררי יום + סוג */}
+          <div className="search-overlay">
+            <div className="day-selector">
+              {HEBREW_DAYS.map(d => (
+                <button
+                  key={d}
+                  className={`day-chip${selectedDay === d ? " active" : ""}${d === todayHebrew ? " today" : ""}`}
+                  onClick={() => setSelectedDay(d)}
+                >
+                  {d}{d === todayHebrew ? " ★" : ""}
+                </button>
+              ))}
             </div>
-            {searchOpen && searchResults.length > 0 && (
-              <div className="search-dropdown">
-                {searchResults.map(s => (
-                  <div key={s.name} className="search-result" onClick={() => selectStreet(s)}>
-                    <span className="result-name">{s.name}</span>
-                    <span className="result-day">הוצאה: {s.takeout_day}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="type-selector">
+              <button
+                className={`type-chip${selectedType === "takeout" ? " active" : ""}`}
+                onClick={() => setSelectedType("takeout")}
+              >📦 הוצאה</button>
+              <button
+                className={`type-chip${selectedType === "collection" ? " active" : ""}`}
+                onClick={() => setSelectedType("collection")}
+              >🚛 פינוי</button>
+            </div>
           </div>
 
           {/* פילטרים */}
@@ -504,6 +485,34 @@ const globalStyles = `
   .search-result:hover { background: var(--surface2); }
   .result-name { font-size: 14px; font-weight: 600; color: var(--text); }
   .result-day  { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+  /* ── בורר יום + סוג ── */
+  .day-selector {
+    display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .day-selector::-webkit-scrollbar { display: none; }
+  .day-chip {
+    flex-shrink: 0; padding: 7px 13px; border-radius: 20px;
+    background: #1a1d27ee; border: 1px solid var(--border);
+    color: var(--text-muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: var(--font);
+    backdrop-filter: blur(8px); transition: all 0.15s; white-space: nowrap;
+  }
+  .day-chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .day-chip.today  { border-color: #f59e0b; }
+  .day-chip.today.active { background: #f59e0b; border-color: #f59e0b; }
+  .type-selector {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  .type-chip {
+    flex: 1; padding: 8px 0; border-radius: 20px; text-align: center;
+    background: #1a1d27ee; border: 1px solid var(--border);
+    color: var(--text-muted); font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: var(--font);
+    backdrop-filter: blur(8px); transition: all 0.15s;
+  }
+  .type-chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
 
   /* ── פילטרים ── */
   .filter-overlay {
