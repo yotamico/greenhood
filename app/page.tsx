@@ -103,9 +103,7 @@ export default function HomePage() {
     }
   }
 
-  const searchResults = searchQ.length >= 2
-    ? NES_ZIONA_STREETS.filter(s => s.name.includes(searchQ)).slice(0, 6)
-    : [];
+
 
   // ── בדיקת auth ──
   useEffect(() => {
