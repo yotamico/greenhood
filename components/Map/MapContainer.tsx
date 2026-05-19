@@ -485,14 +485,6 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
             >
               <Popup className="eco-popup">
                 <div className="popup-inner" dir="rtl">
-                  {r.photo_url && (
-                    <img
-                      src={r.photo_url}
-                      alt="תמונת פריט"
-                      className="popup-photo popup-photo-click"
-                      onClick={() => setLightboxUrl(r.photo_url!)}
-                    />
-                  )}
                   <p className="popup-chip">
                     {REPORT_EMOJI[r.category ?? r.item_type] ?? "📦"} {r.item_type}
                     {r.category ? ` · ${r.category}` : ""}
@@ -501,6 +493,16 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
                   <p className="popup-sub">
                     פינוי: {r.collection_day ?? "—"} · {timeAgo(r.created_at)}
                   </p>
+                  {r.photo_url && (
+                    <div className="popup-photos">
+                      <img
+                        src={r.photo_url}
+                        alt="תמונת פריט"
+                        className="popup-photo-thumb"
+                        onClick={() => setLightboxUrl(r.photo_url!)}
+                      />
+                    </div>
+                  )}
                   {r.lat != null && r.lng != null && (
                     <button
                       className="popup-nav-btn"
@@ -679,11 +681,17 @@ const mapStyles = `
   .eco-popup .leaflet-popup-content { margin: 0; line-height: 1; }
   .eco-popup .leaflet-popup-tip-container .leaflet-popup-tip { background: #1a1d27; }
   .eco-popup .leaflet-popup-close-button { color: #7880a0 !important; font-size: 18px !important; top: 8px !important; right: 8px !important; }
-  .popup-photo {
-    width: 100%; max-height: 160px; object-fit: cover;
-    border-radius: 8px 8px 0 0; display: block; margin-bottom: 2px;
-  }
   .popup-inner { padding: 12px; display: flex; flex-direction: column; gap: 5px; font-family: 'Heebo', sans-serif; }
+  .popup-photos {
+    display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    margin: 4px 0;
+  }
+  .popup-photos::-webkit-scrollbar { display: none; }
+  .popup-photo-thumb {
+    width: 72px; height: 72px; object-fit: cover;
+    border-radius: 8px; flex-shrink: 0; cursor: zoom-in;
+    border: 1px solid #2e3348;
+  }
   .popup-nav-btn {
     display: block; margin-top: 8px; width: 100%;
     background: #1a73e8; color: #fff; border-radius: 8px;
