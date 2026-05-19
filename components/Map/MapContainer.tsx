@@ -261,6 +261,7 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
   const [navTarget,     setNavTarget]     = useState<LatLng | null>(null);
   const [navTargetLabel,setNavTargetLabel]= useState("");
   const [navToRoute,    setNavToRoute]    = useState<LatLng[] | null>(null);
+  const [lightboxUrl,   setLightboxUrl]   = useState<string | null>(null);
   const mapRef = useRef<L.Map | null>(null);
 
   const today = HEBREW_DAYS[new Date().getDay()];
@@ -397,6 +398,21 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
   return (
     <>
       <style>{mapStyles}</style>
+
+      {/* lightbox תמונה מלאה */}
+      {lightboxUrl && (
+        <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
+          <button className="lightbox-close" onClick={() => setLightboxUrl(null)}>✕</button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightboxUrl}
+            alt="תצוגה מלאה"
+            className="lightbox-img"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
+
       <div style={{ position: "relative", width: "100%", height: "100%" }}>
         <MapContainer
           center={NES_ZIONA}
@@ -473,7 +489,8 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
                     <img
                       src={r.photo_url}
                       alt="תמונת פריט"
-                      className="popup-photo"
+                      className="popup-photo popup-photo-click"
+                      onClick={() => setLightboxUrl(r.photo_url!)}
                     />
                   )}
                   <p className="popup-chip">
@@ -681,4 +698,26 @@ const mapStyles = `
 
   .leaflet-control-attribution { background: rgba(15,17,23,0.8) !important; color: #4a5070 !important; font-size: 9px !important; }
   .leaflet-control-attribution a { color: #4a5070 !important; }
+
+  .popup-photo-click { cursor: zoom-in; }
+
+  .lightbox-overlay {
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.92);
+    display: flex; align-items: center; justify-content: center;
+    animation: fadeIn 0.18s ease;
+  }
+  .lightbox-img {
+    max-width: 95vw; max-height: 88vh;
+    object-fit: contain; border-radius: 10px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+  }
+  .lightbox-close {
+    position: absolute; top: 18px; right: 18px;
+    background: rgba(255,255,255,0.15); border: none; color: #fff;
+    border-radius: 50%; width: 36px; height: 36px; font-size: 18px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 `;
