@@ -257,7 +257,10 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
   const [routeInfo,   setRouteInfo]   = useState<RouteInfo | null>(null);
   const [status,      setStatus]      = useState<"loading" | "routing" | "ready" | "error">("loading");
   const [recentering, setRecentering] = useState(false);
-  const [navMode,     setNavMode]     = useState(false);
+  const [navMode,       setNavMode]       = useState(false);
+  const [navTarget,     setNavTarget]     = useState<LatLng | null>(null);
+  const [navTargetLabel,setNavTargetLabel]= useState("");
+  const [navToRoute,    setNavToRoute]    = useState<LatLng[] | null>(null);
   const mapRef = useRef<L.Map | null>(null);
 
   const today = HEBREW_DAYS[new Date().getDay()];
@@ -320,6 +323,25 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
       setStatus("ready");
     })();
   }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── חישוב מסלול לנקודת יעד ──
+  useEffect(() => {
+    if (!navTarget) { setNavToRoute(null); return; }
+    const start = userPos ?? NES_ZIONA;
+    fetchOSRMRoute([start, navTarget]).then(result => {
+      if (result) setNavToRoute(result.route);
+    });
+  }, [navTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── גילוי הגעה ליעד (~20 מ') ──
+  useEffect(() => {
+    if (!navTarget || !userPos) return;
+    if (haversine(userPos, navTarget) < 20) {
+      setNavMode(false);
+      setNavTarget(null);
+      setNavToRoute(null);
+    }
+  }, [userPos, navTarget]);
 
   // ── follow mode ──
   useEffect(() => {
@@ -408,19 +430,18 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
             </Polyline>
           ))}
 
-          {/* קו מסלול — סגנון Google Maps */}
-          {osrmRoute && osrmRoute.length > 1 && (
+          {/* קו מסלול — ירוק לדיווח, כחול לאיסוף */}
+          {navToRoute && navToRoute.length > 1 ? (
             <>
-              <Polyline
-                positions={osrmRoute}
-                pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.9, lineCap: "round", lineJoin: "round" }}
-              />
-              <Polyline
-                positions={osrmRoute}
-                pathOptions={{ color: "#1a73e8", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }}
-              />
+              <Polyline positions={navToRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={navToRoute} pathOptions={{ color: "#22c55e", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }} />
             </>
-          )}
+          ) : osrmRoute && osrmRoute.length > 1 ? (
+            <>
+              <Polyline positions={osrmRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={osrmRoute} pathOptions={{ color: "#1a73e8", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }} />
+            </>
+          ) : null}
 
           {/* מרקרי עצירות ממוספרות */}
           {streetOrder.map((streetIdx, visitNum) => {
@@ -464,14 +485,20 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
                     פינוי: {r.collection_day ?? "—"} · {timeAgo(r.created_at)}
                   </p>
                   {r.lat != null && r.lng != null && (
-                    <a
-                      href={`https://waze.com/ul?ll=${r.lat},${r.lng}&navigate=yes`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
                       className="popup-nav-btn"
+                      onClick={() => {
+                        setNavTarget([r.lat!, r.lng!]);
+                        setNavTargetLabel(r.street_name);
+                        setNavMode(true);
+                        if (mapRef.current) {
+                          mapRef.current.closePopup();
+                          if (userPos) mapRef.current.flyTo(userPos, 17, { duration: 0.8 });
+                        }
+                      }}
                     >
                       🧭 נווט לכאן
-                    </a>
+                    </button>
                   )}
                 </div>
               </Popup>
@@ -500,14 +527,23 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
         </button>
 
         {/* בר ניווט פעיל */}
-        {navMode && nextStop && userPos && (
+        {navMode && (navTarget != null || (nextStop && userPos)) && (
           <div className="nav-bar" dir="rtl">
             <span className="nav-icon">🧭</span>
             <div className="nav-info">
-              <span className="nav-street">{nextStop.name}</span>
-              <span className="nav-dist">{fmtDist(haversine(userPos, midpoint(nextStop.coords)))}</span>
+              {navTarget && userPos ? (
+                <>
+                  <span className="nav-street">{navTargetLabel}</span>
+                  <span className="nav-dist">{fmtDist(haversine(userPos, navTarget))}</span>
+                </>
+              ) : nextStop && userPos ? (
+                <>
+                  <span className="nav-street">{nextStop.name}</span>
+                  <span className="nav-dist">{fmtDist(haversine(userPos, midpoint(nextStop.coords)))}</span>
+                </>
+              ) : null}
             </div>
-            <button className="nav-stop-btn" onClick={() => setNavMode(false)}>✕</button>
+            <button className="nav-stop-btn" onClick={() => { setNavMode(false); setNavTarget(null); setNavToRoute(null); }}>✕</button>
           </div>
         )}
 
@@ -529,7 +565,10 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
               className={`route-nav-btn${navMode ? " nav-active" : ""}`}
               onClick={() => {
                 setNavMode(v => !v);
-                if (!navMode && userPos && mapRef.current) {
+                if (navMode) {
+                  setNavTarget(null);
+                  setNavToRoute(null);
+                } else if (userPos && mapRef.current) {
                   mapRef.current.flyTo(userPos, 17, { duration: 0.8 });
                 }
               }}
@@ -629,8 +668,9 @@ const mapStyles = `
   }
   .popup-inner { padding: 12px; display: flex; flex-direction: column; gap: 5px; font-family: 'Heebo', sans-serif; }
   .popup-nav-btn {
-    display: block; margin-top: 8px;
+    display: block; margin-top: 8px; width: 100%;
     background: #1a73e8; color: #fff; border-radius: 8px;
+    border: none; cursor: pointer;
     padding: 8px 12px; font-size: 13px; font-weight: 700;
     text-align: center; text-decoration: none;
     font-family: 'Heebo', sans-serif;
