@@ -73,8 +73,6 @@ export default function HomePage() {
   const [editIsTaken,   setEditIsTaken]   = useState(false);
   const [editSaving,    setEditSaving]    = useState(false);
   const [userPos,       setUserPos]       = useState<LatLng | null>(null);
-  const [selectedDay,   setSelectedDay]   = useState(todayHebrew);
-  const [selectedType,  setSelectedType]  = useState<"takeout" | "collection">("takeout");
   const sheetRef   = useRef<HTMLDivElement>(null);
   const dragStartY = useRef<number | null>(null);
 
@@ -178,35 +176,9 @@ export default function HomePage() {
               filterType={filterType}
               reports={reports}
               onUserPos={handleUserPos}
-              selectedDay={selectedDay}
-              selectedType={selectedType}
             />
           </div>
 
-          {/* בוררי יום + סוג */}
-          <div className="search-overlay">
-            <div className="day-selector">
-              {HEBREW_DAYS.map(d => (
-                <button
-                  key={d}
-                  className={`day-chip${selectedDay === d ? " active" : ""}${d === todayHebrew ? " today" : ""}`}
-                  onClick={() => setSelectedDay(d)}
-                >
-                  {d}{d === todayHebrew ? " ★" : ""}
-                </button>
-              ))}
-            </div>
-            <div className="type-selector">
-              <button
-                className={`type-chip${selectedType === "takeout" ? " active" : ""}`}
-                onClick={() => setSelectedType("takeout")}
-              >📦 הוצאה</button>
-              <button
-                className={`type-chip${selectedType === "collection" ? " active" : ""}`}
-                onClick={() => setSelectedType("collection")}
-              >🚛 פינוי</button>
-            </div>
-          </div>
 
           {/* פילטרים */}
           <div className="filter-overlay">
