@@ -89,6 +89,18 @@ export interface Report {
   created_at: string;
   user_id?: string | null;
   user_email?: string | null;
+  photo_url?: string | null;
+}
+
+export async function uploadReportPhoto(file: File, reportId: string): Promise<string | null> {
+  const ext  = file.name.split(".").pop() ?? "jpg";
+  const path = `${reportId}.${ext}`;
+  const { error } = await supabase.storage
+    .from("report-photos")
+    .upload(path, file, { upsert: true });
+  if (error) return null;
+  const { data } = supabase.storage.from("report-photos").getPublicUrl(path);
+  return data.publicUrl;
 }
 
 export async function insertReport(

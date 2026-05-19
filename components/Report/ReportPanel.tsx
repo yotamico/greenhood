@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { NES_ZIONA_STREETS, Street } from "@/lib/nes-ziona-streets";
-import { insertReport, logActivity } from "@/lib/supabase";
+import { insertReport, updateReport, uploadReportPhoto, logActivity } from "@/lib/supabase";
 
 type LatLng = [number, number];
 
@@ -175,7 +175,7 @@ export function ReportPanel({ userPos, userId, userEmail, onClose, onSubmitted }
     if (!photoFile) { setErr("יש לצרף תמונה של הפריט"); return; }
     setSubmitting(true);
     setErr(null);
-    const { error } = await insertReport({
+    const { data: newReport, error } = await insertReport({
       street_name:      displayAddr || street?.name || "",
       item_type:        itemType.trim(),
       category:         category || null,
@@ -192,6 +192,13 @@ export function ReportPanel({ userPos, userId, userEmail, onClose, onSubmitted }
     });
     setSubmitting(false);
     if (error) { setErr("שגיאה בשליחה — נסה שוב"); return; }
+
+    // העלאת תמונה ועדכון הדיווח
+    if (photoFile && newReport?.id) {
+      const photoUrl = await uploadReportPhoto(photoFile, newReport.id);
+      if (photoUrl) await updateReport(newReport.id, { photo_url: photoUrl });
+    }
+
     if (userId && userEmail) {
       await logActivity(userId, userEmail, "report", { item_type: itemType.trim(), category: category || null });
     }

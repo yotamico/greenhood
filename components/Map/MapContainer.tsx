@@ -465,6 +465,13 @@ export default function EcoMap({ filterType, reports, onUserPos, selectedDay, se
             >
               <Popup className="eco-popup">
                 <div className="popup-inner" dir="rtl">
+                  {r.photo_url && (
+                    <img
+                      src={r.photo_url}
+                      alt="תמונת פריט"
+                      className="popup-photo"
+                    />
+                  )}
                   <p className="popup-chip">
                     {REPORT_EMOJI[r.category ?? r.item_type] ?? "📦"} {r.item_type}
                     {r.category ? ` · ${r.category}` : ""}
@@ -623,6 +630,10 @@ const mapStyles = `
   .eco-popup .leaflet-popup-content { margin: 0; line-height: 1; }
   .eco-popup .leaflet-popup-tip-container .leaflet-popup-tip { background: #1a1d27; }
   .eco-popup .leaflet-popup-close-button { color: #7880a0 !important; font-size: 18px !important; top: 8px !important; right: 8px !important; }
+  .popup-photo {
+    width: 100%; max-height: 160px; object-fit: cover;
+    border-radius: 8px 8px 0 0; display: block; margin-bottom: 2px;
+  }
   .popup-inner { padding: 12px; display: flex; flex-direction: column; gap: 5px; font-family: 'Heebo', sans-serif; }
   .popup-chip   { font-size: 10px; font-weight: 600; color: #1a73e8; margin: 0; }
   .popup-street { font-size: 16px; font-weight: 900; color: #e8eaf2; margin: 0; }
