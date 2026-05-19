@@ -486,7 +486,7 @@ const globalStyles = `
 
   /* ── פילטרים ── */
   .filter-overlay {
-    position: absolute; top: 68px; left: 12px; right: 12px; z-index: 1000;
+    position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
     display: flex; gap: 7px; overflow-x: auto;
     scrollbar-width: none;
   }

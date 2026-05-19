@@ -566,12 +566,6 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
           </div>
         )}
 
-        {/* Badge יום */}
-        <div className="day-badge" dir="rtl" style={navMode ? { top: 62 } : undefined}>
-          <span className={`day-dot${status === "routing" ? " spinning" : ""}`} />
-          {badgeText}
-        </div>
-
         {/* בר מסלול תחתי */}
         {status === "ready" && routeInfo && (
           <div className="route-bar" dir="rtl">
