@@ -681,10 +681,26 @@ const mapStyles = `
   .eco-popup .leaflet-popup-content { margin: 0; line-height: 1; }
   .eco-popup .leaflet-popup-tip-container .leaflet-popup-tip { background: #1a1d27; }
   .eco-popup .leaflet-popup-close-button { color: #7880a0 !important; font-size: 18px !important; top: 8px !important; right: 8px !important; }
-  .popup-inner { padding: 12px; display: flex; flex-direction: column; gap: 5px; font-family: 'Heebo', sans-serif; }
+  .popup-inner {
+    padding: 12px; display: flex; flex-direction: column; gap: 6px;
+    font-family: 'Heebo', sans-serif; align-items: flex-start;
+  }
+  .popup-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(26,115,232,0.15); border-radius: 20px;
+    padding: 3px 9px; font-size: 11px; font-weight: 700; color: #60a5fa; margin: 0;
+  }
+  .popup-street {
+    font-size: 16px; font-weight: 900; color: #e8eaf2; margin: 0;
+    width: 100%; text-align: right;
+  }
+  .popup-sub {
+    font-size: 11px; color: #7880a0; margin: 0;
+    width: 100%; text-align: right;
+  }
   .popup-photos {
     display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
-    margin: 4px 0;
+    margin: 2px 0; width: 100%;
   }
   .popup-photos::-webkit-scrollbar { display: none; }
   .popup-photo-thumb {
@@ -693,16 +709,12 @@ const mapStyles = `
     border: 1px solid #2e3348;
   }
   .popup-nav-btn {
-    display: block; margin-top: 8px; width: 100%;
+    display: block; margin-top: 4px; width: 100%;
     background: #1a73e8; color: #fff; border-radius: 8px;
     border: none; cursor: pointer;
-    padding: 8px 12px; font-size: 13px; font-weight: 700;
-    text-align: center; text-decoration: none;
-    font-family: 'Heebo', sans-serif;
+    padding: 9px 12px; font-size: 13px; font-weight: 700;
+    text-align: center; font-family: 'Heebo', sans-serif;
   }
-  .popup-chip   { font-size: 10px; font-weight: 600; color: #1a73e8; margin: 0; }
-  .popup-street { font-size: 16px; font-weight: 900; color: #e8eaf2; margin: 0; }
-  .popup-sub    { font-size: 11px; color: #7880a0; margin: 0; }
 
   .leaflet-control-attribution { background: rgba(15,17,23,0.8) !important; color: #4a5070 !important; font-size: 9px !important; }
   .leaflet-control-attribution a { color: #4a5070 !important; }
