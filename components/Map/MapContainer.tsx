@@ -463,6 +463,16 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
                   <p className="popup-sub">
                     פינוי: {r.collection_day ?? "—"} · {timeAgo(r.created_at)}
                   </p>
+                  {r.lat != null && r.lng != null && (
+                    <a
+                      href={`https://waze.com/ul?ll=${r.lat},${r.lng}&navigate=yes`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="popup-nav-btn"
+                    >
+                      🧭 נווט לכאן
+                    </a>
+                  )}
                 </div>
               </Popup>
             </Marker>
@@ -618,6 +628,13 @@ const mapStyles = `
     border-radius: 8px 8px 0 0; display: block; margin-bottom: 2px;
   }
   .popup-inner { padding: 12px; display: flex; flex-direction: column; gap: 5px; font-family: 'Heebo', sans-serif; }
+  .popup-nav-btn {
+    display: block; margin-top: 8px;
+    background: #1a73e8; color: #fff; border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; font-weight: 700;
+    text-align: center; text-decoration: none;
+    font-family: 'Heebo', sans-serif;
+  }
   .popup-chip   { font-size: 10px; font-weight: 600; color: #1a73e8; margin: 0; }
   .popup-street { font-size: 16px; font-weight: 900; color: #e8eaf2; margin: 0; }
   .popup-sub    { font-size: 11px; color: #7880a0; margin: 0; }
