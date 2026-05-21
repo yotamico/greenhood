@@ -132,15 +132,21 @@ export function ReportPanel({ userPos, userId, userEmail, onClose, onSubmitted }
 
   async function detectFromPos(pos: LatLng) {
     const road = await reverseGeocode(pos);
+    let hasAddr = false;
     if (road) {
       setDisplayAddr(road);
       setStreet(matchStreet(road) ?? findNearestInRange(pos));
+      hasAddr = true;
     } else {
       const nearest = findNearestInRange(pos);
       setStreet(nearest);
-      setDisplayAddr(nearest?.name ?? "");
+      if (nearest) {
+        setDisplayAddr(nearest.name);
+        hasAddr = true;
+      }
     }
     setLocating(false);
+    if (!hasAddr) setSearching(true);
   }
 
   // פתח מצלמה אוטומטית בטעינה
@@ -157,11 +163,12 @@ export function ReportPanel({ userPos, userId, userEmail, onClose, onSubmitted }
     } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         ({ coords }) => detectFromPos([coords.latitude, coords.longitude]),
-        () => setLocating(false),
+        () => { setLocating(false); setSearching(true); },
         { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
       );
     } else {
       setLocating(false);
+      setSearching(true);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
