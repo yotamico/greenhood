@@ -154,10 +154,13 @@ export default function HomePage() {
 
   if (!authReady) {
     return (
-      <div style={{ minHeight: "100dvh", background: "#0f1117", display: "flex",
-        alignItems: "center", justifyContent: "center", color: "#7880a0",
-        fontFamily: "'Heebo', sans-serif", fontSize: 16 }}>
-        טוען...
+      <div style={{ minHeight: "100dvh", background: "#F5F2E8", display: "flex",
+        alignItems: "center", justifyContent: "center",
+        fontFamily: "'Rubik', 'Heebo', sans-serif" }}>
+        <div style={{ textAlign: "center", color: "#7A7363" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🌿</div>
+          <p style={{ fontSize: 15, fontWeight: 600 }}>טוען...</p>
+        </div>
       </div>
     );
   }
@@ -233,36 +236,47 @@ export default function HomePage() {
         {activeTab === "history" && (
           <div className="panel-area" dir="rtl">
             <div className="history-header">
-              <h2 className="history-title">📋 דיווחים אחרונים</h2>
+              <div>
+                <div className="history-title">פיד</div>
+                <div className="history-count">{reports.length} פריטים</div>
+              </div>
               <button className="history-refresh" onClick={loadReports}>↻ רענן</button>
             </div>
             {reports.length === 0 ? (
               <div className="history-empty">
                 <p style={{ fontSize: 40 }}>📭</p>
-                <p>אין דיווחים עדיין</p>
-                <p style={{ color: "#7880a0", fontSize: 13, marginTop: 4 }}>
-                  לחץ על "דיווח" כדי להוסיף את הפריט הראשון
+                <p style={{ fontWeight: 700, color: "var(--ink)" }}>אין דיווחים עדיין</p>
+                <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>
+                  לחץ על "דווח" כדי להוסיף את הפריט הראשון
                 </p>
               </div>
             ) : (
-              <div className="history-list">
+              <div className="feed-grid">
                 {reports.map(r => (
-                  <div key={r.id} className="history-card">
+                  <div key={r.id} className="feed-card">
                     <div
-                      className="history-badge"
-                      style={{ background: ITEM_BG[r.category ?? r.item_type] ?? "#1f2937" }}
+                      className="feed-card-photo"
+                      style={{ background: ITEM_BG[r.category ?? r.item_type] ?? "#EDE6D2" }}
                     >
-                      {ITEM_EMOJI[r.category ?? r.item_type] ?? "📦"}
+                      <span className="feed-card-emoji">
+                        {ITEM_EMOJI[r.category ?? r.item_type] ?? "📦"}
+                      </span>
+                      <div className="feed-card-overlay-actions">
+                        <button className="feed-action-btn" onClick={() => openEdit(r)}
+                          dangerouslySetInnerHTML={{ __html: editBtnIcon }} />
+                        <button className="feed-action-btn del" onClick={() => handleDelete(r.id)}
+                          dangerouslySetInnerHTML={{ __html: deleteBtnIcon }} />
+                      </div>
+                      {r.collection_day && (
+                        <div className="feed-urgent-tag">פינוי {r.collection_day}</div>
+                      )}
                     </div>
-                    <div className="history-info">
-                      <p className="history-street">{r.street_name}</p>
-                      <p className="history-meta">
-                        {r.item_type}{r.category ? ` · ${r.category}` : ""} · {timeAgo(r.created_at)}
-                      </p>
-                    </div>
-                    <div className="history-actions">
-                      <button className="card-btn edit-btn" onClick={() => openEdit(r)}>✏️</button>
-                      <button className="card-btn del-btn"  onClick={() => handleDelete(r.id)}>🗑️</button>
+                    <div className="feed-card-body">
+                      <div className="feed-card-title">{r.street_name}</div>
+                      <div className="feed-card-meta">
+                        <span>{r.item_type}{r.category ? ` · ${r.category}` : ""}</span>
+                        <span>{timeAgo(r.created_at)}</span>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -345,16 +359,16 @@ export default function HomePage() {
               key={t.key}
               className={`tab-btn${activeTab === t.key ? " active" : ""}`}
               onClick={() => setActiveTab(t.key)}
-              dangerouslySetInnerHTML={{ __html: `${t.icon}<span class="tab-label">${t.label}</span>` }}
+              dangerouslySetInnerHTML={{ __html: `<span class="tab-icon-wrap">${t.icon}</span><span class="tab-label">${t.label}</span>` }}
             />
           ))}
           {currentUser?.email === ADMIN_EMAIL && (
             <button className="tab-btn" onClick={() => router.push("/admin")}
-              dangerouslySetInnerHTML={{ __html: `${adminIcon}<span class="tab-label">ניהול</span>` }}
+              dangerouslySetInnerHTML={{ __html: `<span class="tab-icon-wrap">${adminIcon}</span><span class="tab-label">ניהול</span>` }}
             />
           )}
           <button className="tab-btn" onClick={async () => { await signOut(); router.replace("/login"); }}
-            dangerouslySetInnerHTML={{ __html: `${logoutIcon}<span class="tab-label">יציאה</span>` }}
+            dangerouslySetInnerHTML={{ __html: `<span class="tab-icon-wrap">${logoutIcon}</span><span class="tab-label">יציאה</span>` }}
           />
         </nav>
 
@@ -384,6 +398,17 @@ const logoutIcon = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none">
   <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
 </svg>`;
 
+const editBtnIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none">
+  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+</svg>`;
+
+const deleteBtnIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none">
+  <polyline points="3 6 5 6 21 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  <path d="M10 11v6M14 11v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+</svg>`;
+
 // ── סגנונות גלובליים — GreenHOOD · Sage Calm ──
 const globalStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800;900&display=swap');
@@ -410,16 +435,25 @@ const globalStyles = `
     --warning-tint:  #F0DBC0;
     --info:          #6B8FA8;
     --info-tint:     #C9D8E2;
-    /* compat aliases */
-    --bg:         var(--paper);
-    --text:       var(--ink);
-    --text-muted: var(--muted);
-    --border:     rgba(45,42,36,0.22);
-    --blue:       var(--primary);
-    --radius:     14px;
-    --font:       'Rubik', 'Heebo', system-ui, sans-serif;
-    --tab-h:      62px;
+    --bg:            var(--paper);
+    --text:          var(--ink);
+    --text-muted:    var(--muted);
+    --border:        rgba(45,42,36,0.22);
+    --blue:          var(--primary);
+    --radius:        14px;
+    --font:          'Rubik', 'Heebo', system-ui, sans-serif;
+    --tab-h:         64px;
   }
+
+  /* ── Typography scale (matches design system) ── */
+  .t-h1 { font-family: var(--font); font-size: 36px; font-weight: 800; line-height: 1.1; color: var(--ink); }
+  .t-h2 { font-family: var(--font); font-size: 28px; font-weight: 800; line-height: 1.15; color: var(--ink); }
+  .t-h3 { font-family: var(--font); font-size: 22px; font-weight: 800; line-height: 1.2; color: var(--ink); }
+  .t-h4 { font-family: var(--font); font-size: 18px; font-weight: 700; line-height: 1.25; color: var(--ink); }
+  .t-h5 { font-family: var(--font); font-size: 15px; font-weight: 700; line-height: 1.3; color: var(--ink); }
+  .t-body  { font-family: var(--font); font-size: 15px; font-weight: 400; line-height: 1.55; color: var(--ink); }
+  .t-small { font-family: var(--font); font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--muted); }
+  .t-xs    { font-family: var(--font); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 
   html, body { height: 100%; background: var(--paper); color: var(--ink); font-family: var(--font); overflow: hidden; -webkit-font-smoothing: antialiased; }
 
@@ -438,7 +472,7 @@ const globalStyles = `
   .filter-overlay::-webkit-scrollbar { display: none; }
   .filter-chip {
     flex-shrink: 0; white-space: nowrap;
-    padding: 7px 14px; height: 34px; border-radius: 999px;
+    padding: 8px 14px; height: 36px; border-radius: 999px;
     background: var(--surface); color: var(--ink);
     border: 1.5px solid var(--ink);
     font-size: 13px; font-weight: 700; font-family: var(--font);
@@ -454,47 +488,73 @@ const globalStyles = `
   /* ── פאנל ── */
   .panel-area { flex: 1; overflow: hidden; display: flex; flex-direction: column; background: var(--paper); }
 
-  /* ── היסטוריה ── */
+  /* ── פיד ── */
   .history-header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 20px; border-bottom: 2px solid var(--ink);
+    padding: 16px 20px 14px; border-bottom: 2px solid var(--ink);
     background: var(--surface); flex-shrink: 0;
   }
-  .history-title   { font-size: 18px; font-weight: 800; color: var(--ink); }
+  .history-title { font-size: 26px; font-weight: 800; color: var(--ink); font-family: var(--font); line-height: 1; }
+  .history-count { font-size: 13px; color: var(--muted); font-weight: 500; margin-top: 2px; }
   .history-refresh {
     background: var(--surface); border: 1.5px solid var(--ink); color: var(--ink);
-    border-radius: 8px; padding: 5px 10px; font-size: 13px; cursor: pointer;
-    font-family: var(--font); box-shadow: 1.5px 1.5px 0 var(--shadow-ink);
+    border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 700;
+    cursor: pointer; font-family: var(--font); box-shadow: 1.5px 1.5px 0 var(--shadow-ink);
   }
   .history-empty {
     flex: 1; display: flex; flex-direction: column; align-items: center;
     justify-content: center; gap: 8px; color: var(--ink); text-align: center; padding: 40px;
   }
-  .history-list { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .history-card {
-    display: flex; align-items: center; gap: 14px;
-    background: var(--surface); border: 2px solid var(--ink);
-    border-radius: 16px; padding: 14px;
+
+  /* ── Masonry feed grid ── */
+  .feed-grid {
+    flex: 1; overflow-y: auto; padding: 14px 14px 80px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    align-items: start;
+  }
+  .feed-card {
+    background: var(--surface); border-radius: 16px;
+    border: 2px solid var(--ink);
     box-shadow: 3px 3px 0 var(--shadow-ink);
+    overflow: hidden;
   }
-  .history-badge {
-    width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center; font-size: 22px;
-    border: 1.5px solid var(--ink);
-  }
-  .history-info   { flex: 1; min-width: 0; }
-  .history-street { font-size: 15px; font-weight: 700; color: var(--ink); margin: 0; }
-  .history-meta   { font-size: 12px; color: var(--muted); margin: 3px 0 0; }
-  .history-actions { display: flex; gap: 6px; flex-shrink: 0; }
-  .card-btn {
-    background: var(--paper-2); border: 1.5px solid var(--ink);
-    border-radius: 8px; width: 34px; height: 34px;
+  .feed-card-photo {
+    height: 130px; position: relative;
+    border-bottom: 2px solid var(--ink);
     display: flex; align-items: center; justify-content: center;
-    font-size: 16px; cursor: pointer;
-    box-shadow: 1.5px 1.5px 0 var(--shadow-ink);
   }
-  .del-btn:hover  { border-color: var(--accent); background: var(--accent-tint); }
-  .edit-btn:hover { border-color: var(--primary); background: var(--primary-tint); }
+  .feed-card-emoji { font-size: 46px; pointer-events: none; }
+  .feed-card-overlay-actions {
+    position: absolute; top: 7px; left: 0; right: 0;
+    display: flex; justify-content: space-between; padding: 0 7px;
+  }
+  .feed-action-btn {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--surface); border: 1.5px solid var(--ink);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--ink);
+    box-shadow: 1.5px 1.5px 0 var(--shadow-ink);
+    padding: 0;
+  }
+  .feed-action-btn.del { color: var(--accent); }
+  .feed-action-btn.del:hover { background: var(--accent-tint); border-color: var(--accent); }
+  .feed-action-btn:hover:not(.del) { background: var(--primary-tint); border-color: var(--primary); }
+  .feed-urgent-tag {
+    position: absolute; bottom: 7px; right: 7px;
+    padding: 2px 7px; border-radius: 999px;
+    background: var(--accent); color: white;
+    border: 1.5px solid var(--ink); font-size: 10px; font-weight: 800;
+    font-family: var(--font); box-shadow: 1px 1px 0 var(--shadow-ink);
+  }
+  .feed-card-body { padding: 10px; display: flex; flex-direction: column; gap: 5px; }
+  .feed-card-title {
+    font-family: var(--font); font-size: 14px; font-weight: 800;
+    color: var(--ink); line-height: 1.2;
+  }
+  .feed-card-meta {
+    display: flex; flex-direction: column; gap: 2px;
+    font-size: 11px; color: var(--muted); font-weight: 500;
+  }
 
   /* ── מודל עריכה ── */
   .edit-overlay { position: fixed; inset: 0; z-index: 2000; background: rgba(45,42,36,0.5); display: flex; align-items: flex-end; }
@@ -536,20 +596,33 @@ const globalStyles = `
   .edit-chip.selected { background: var(--primary); color: var(--ink); box-shadow: 2px 2px 0 var(--shadow-ink); }
   .edit-taken { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; color: var(--ink-soft); cursor: pointer; }
 
-  /* ── טאב-בר ── */
+  /* ── Tab Bar — pill highlight style (matches HiFiTabBar) ── */
   .tab-bar {
     height: var(--tab-h); flex-shrink: 0;
-    display: flex; align-items: stretch;
+    display: flex; align-items: center;
     background: var(--surface); border-top: 2px solid var(--ink);
+    padding: 6px 0 10px;
   }
   .tab-btn {
     flex: 1; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 4px;
+    justify-content: center; gap: 3px;
     background: none; border: none; color: var(--muted);
-    cursor: pointer; transition: color 0.15s; padding: 8px 0; font-family: var(--font);
+    cursor: pointer; transition: color 0.15s; padding: 4px 4px;
+    font-family: var(--font);
   }
-  .tab-btn.active { color: var(--primary-dark); }
-  .tab-label { font-size: 11px; font-weight: 700; }
+  .tab-btn.active { color: var(--ink); }
+  .tab-icon-wrap {
+    width: 44px; height: 32px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, border 0.15s;
+  }
+  .tab-btn.active .tab-icon-wrap {
+    background: var(--primary);
+    border: 2px solid var(--ink);
+    box-shadow: 1.5px 1.5px 0 var(--shadow-ink);
+  }
+  .tab-label { font-size: 11px; font-weight: 700; line-height: 1; }
+  .tab-btn.active .tab-label { font-weight: 800; color: var(--ink); }
 
   /* ── FAB דיווח (sticker) ── */
   .fab-report {
@@ -570,7 +643,7 @@ const globalStyles = `
     position: absolute; bottom: 0; left: 0; right: 0; height: 72%; z-index: 1002;
     border-radius: 20px 20px 0 0; overflow: hidden;
     border: 2px solid var(--ink); border-bottom: none;
-    box-shadow: 0 -4px 0 var(--ink);
+    box-shadow: 0 -8px 0 var(--ink);
     animation: slideUp 0.28s cubic-bezier(0.32, 0.72, 0, 1);
     display: flex; flex-direction: column;
   }
@@ -578,7 +651,7 @@ const globalStyles = `
     position: absolute; top: 0; left: 0; right: 0; height: 28px; z-index: 10;
     cursor: grab; display: flex; align-items: center; justify-content: center;
   }
-  .sheet-handle::after { content: ''; width: 36px; height: 4px; border-radius: 2px; background: rgba(45,42,36,0.3); }
+  .sheet-handle::after { content: ''; width: 48px; height: 5px; border-radius: 3px; background: var(--ink); margin: 0 auto; }
 
   @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
