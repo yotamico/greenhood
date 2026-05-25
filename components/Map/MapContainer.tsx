@@ -174,19 +174,19 @@ function buildGmapsUrl(streets: StreetWithGeom[], order: number[], userPos?: Lat
 // ── אייקונים ──
 function stopIcon(n: number) {
   return L.divIcon({
-    html: `<div style="width:26px;height:26px;border-radius:50%;background:#1a73e8;color:#fff;
+    html: `<div style="width:28px;height:28px;border-radius:50%;background:#6B9956;color:#fff;
       font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;
-      border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.5);
-      font-family:'Heebo',sans-serif;">${n}</div>`,
-    iconSize: [26, 26], iconAnchor: [13, 13], className: "",
+      border:2px solid #2D2A24;box-shadow:2px 2px 0 rgba(45,42,36,0.25);
+      font-family:'Rubik','Heebo',sans-serif;">${n}</div>`,
+    iconSize: [28, 28], iconAnchor: [14, 14], className: "",
   });
 }
 
 const REPORT_COLORS: Record<string, string> = {
-  "גזם":      "#22c55e",
-  "גרוטאות": "#f97316",
-  "ריהוט":   "#8b5cf6",
-  "אחר":     "#6b7280",
+  "גזם":      "#A8C496",   // primary-light sage
+  "גרוטאות": "#D9A574",   // warning amber
+  "ריהוט":   "#C97464",   // accent terra coral
+  "אחר":     "#B0A892",   // muted-2
 };
 const REPORT_EMOJI: Record<string, string> = {
   "גזם":      "🌿",
@@ -196,20 +196,20 @@ const REPORT_EMOJI: Record<string, string> = {
 };
 
 function reportIcon(type: string) {
-  const color = REPORT_COLORS[type] ?? "#6b7280";
+  const color = REPORT_COLORS[type] ?? "#7A7363";
   const emoji = REPORT_EMOJI[type]  ?? "📦";
   return L.divIcon({
-    html: `<div style="width:34px;height:34px;border-radius:50%;background:${color};
-      display:flex;align-items:center;justify-content:center;font-size:17px;
-      border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.4);">${emoji}</div>`,
-    iconSize: [34, 34], iconAnchor: [17, 17], className: "",
+    html: `<div style="width:36px;height:36px;border-radius:50%;background:${color};
+      display:flex;align-items:center;justify-content:center;font-size:18px;
+      border:2.5px solid #2D2A24;box-shadow:3px 3px 0 rgba(45,42,36,0.22);">${emoji}</div>`,
+    iconSize: [36, 36], iconAnchor: [18, 18], className: "",
   });
 }
 
 const userDotIcon = L.divIcon({
-  html: `<div style="width:14px;height:14px;border-radius:50%;background:#3b82f6;
-    border:3px solid #fff;box-shadow:0 0 0 2px #3b82f6,0 2px 8px rgba(59,130,246,0.5)"></div>`,
-  iconSize: [14, 14], iconAnchor: [7, 7], className: "",
+  html: `<div style="width:16px;height:16px;border-radius:50%;background:#6B9956;
+    border:3px solid #fff;box-shadow:0 0 0 2px #2D4A2B,0 2px 8px rgba(45,42,36,0.35)"></div>`,
+  iconSize: [16, 16], iconAnchor: [8, 8], className: "",
 });
 
 // ── sub-components ──
@@ -424,7 +424,7 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
           <LiveLocation onLocated={handleLocated} />
 
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
             maxZoom={19}
           />
@@ -446,16 +446,16 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
             </Polyline>
           ))}
 
-          {/* קו מסלול — ירוק לדיווח, כחול לאיסוף */}
+          {/* קו מסלול — קורל לדיווח, ירוק-זית לאיסוף */}
           {navToRoute && navToRoute.length > 1 ? (
             <>
-              <Polyline positions={navToRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-              <Polyline positions={navToRoute} pathOptions={{ color: "#22c55e", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={navToRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={navToRoute} pathOptions={{ color: "#C97464", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }} />
             </>
           ) : osrmRoute && osrmRoute.length > 1 ? (
             <>
-              <Polyline positions={osrmRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.9, lineCap: "round", lineJoin: "round" }} />
-              <Polyline positions={osrmRoute} pathOptions={{ color: "#1a73e8", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={osrmRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={osrmRoute} pathOptions={{ color: "#6B9956", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }} />
             </>
           ) : null}
 
@@ -596,100 +596,104 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
 }
 
 const mapStyles = `
+  /* ── GreenHOOD Sage Calm — Map tokens ── */
+  /* paper:#F5F2E8  surface:#FFF  ink:#2D2A24  primary:#6B9956  accent:#C97464 */
+
+  /* ── recenter button ── */
   .recenter-btn {
     position: absolute; bottom: 72px; left: 16px; z-index: 1000;
-    width: 40px; height: 40px; border-radius: 10px;
-    background: #1a1d27; border: 1px solid #2e3348; color: #38e07b;
+    width: 42px; height: 42px; border-radius: 12px;
+    background: #FFFFFF; border: 2px solid #2D2A24; color: #2D4A2B;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.4); transition: background 0.15s, transform 0.1s; padding: 8px;
+    box-shadow: 3px 3px 0 rgba(45,42,36,0.18);
+    transition: transform 0.1s; padding: 8px;
   }
-  .recenter-btn:hover  { background: #22263a; transform: scale(1.05); }
-  .recenter-btn:active { transform: scale(0.97); }
-  .recenter-btn.recentering { opacity: 0.7; cursor: default; }
+  .recenter-btn:hover  { background: #F5F2E8; transform: translateY(-1px); }
+  .recenter-btn:active { transform: translateY(1px); box-shadow: 1px 1px 0 rgba(45,42,36,0.18); }
+  .recenter-btn.recentering { opacity: 0.6; cursor: default; }
   .recenter-spinner {
     width: 18px; height: 18px; border-radius: 50%;
-    border: 2px solid #2e3348; border-top-color: #38e07b;
+    border: 2.5px solid #DDE7CC; border-top-color: #6B9956;
     animation: spin 0.8s linear infinite; display: block;
   }
 
-  .day-badge {
-    position: absolute; top: 12px; left: 12px; z-index: 1000;
-    background: #1a1d27dd; border: 1px solid #2e3348; border-radius: 20px;
-    padding: 5px 12px; font-size: 12px; font-weight: 600; color: #e8eaf2;
-    font-family: 'Heebo', sans-serif; display: flex; align-items: center; gap: 7px;
-    backdrop-filter: blur(6px);
-  }
-  .day-dot {
-    width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; flex-shrink: 0;
-    animation: pulse 1.8s ease-in-out infinite;
-  }
-  .day-dot.spinning {
-    background: transparent; border: 2px solid #f59e0b; border-top-color: transparent;
-    animation: spin 1s linear infinite;
-  }
-
+  /* ── route bar (bottom) ── */
   .route-bar {
     position: absolute; bottom: 0; left: 0; right: 0; z-index: 1000;
-    background: #1a1d27f0; border-top: 1px solid #2e3348;
+    background: #FFFFFF; border-top: 2px solid #2D2A24;
     padding: 10px 16px; display: flex; align-items: center; justify-content: space-between;
-    backdrop-filter: blur(8px); font-family: 'Heebo', sans-serif;
+    font-family: 'Rubik', 'Heebo', sans-serif;
   }
   .route-stats { display: flex; align-items: center; gap: 10px; }
-  .route-km   { font-size: 18px; font-weight: 900; color: #e8eaf2; }
-  .route-sep  { color: #2e3348; font-size: 16px; }
-  .route-time { font-size: 14px; font-weight: 600; color: #7880a0; }
+  .route-km   { font-size: 18px; font-weight: 900; color: #2D2A24; }
+  .route-sep  { color: #B0A892; font-size: 16px; }
+  .route-time { font-size: 14px; font-weight: 500; color: #7A7363; }
   .route-nav-btn {
     display: flex; align-items: center; gap: 6px;
-    background: #1a73e8; color: #fff; border-radius: 10px;
+    background: #6B9956; color: #fff; border-radius: 10px;
+    border: 2px solid #2D2A24; box-shadow: 2px 2px 0 rgba(45,42,36,0.22);
     padding: 8px 14px; font-size: 14px; font-weight: 700;
-    text-decoration: none; transition: opacity 0.15s;
+    font-family: 'Rubik', 'Heebo', sans-serif;
+    cursor: pointer; transition: transform 0.1s;
   }
-  .route-nav-btn:hover { opacity: 0.9; }
+  .route-nav-btn:hover { transform: translateY(-1px); }
+  .route-nav-btn:active { transform: translateY(1px); box-shadow: 1px 1px 0 rgba(45,42,36,0.22); }
+  .route-nav-btn.nav-active {
+    background: #C97464; border-color: #8E4A3D; box-shadow: 2px 2px 0 rgba(142,74,61,0.3);
+  }
 
+  /* ── nav bar (top, active navigation) ── */
   .nav-bar {
     position: absolute; top: 0; left: 0; right: 0; z-index: 1002;
-    background: #1a73e8; padding: 10px 16px;
+    background: #6B9956; border-bottom: 2px solid #2D2A24;
+    padding: 10px 16px;
     display: flex; align-items: center; gap: 12px;
-    font-family: 'Heebo', sans-serif;
-    box-shadow: 0 2px 12px rgba(26,115,232,0.5);
+    font-family: 'Rubik', 'Heebo', sans-serif;
+    box-shadow: 0 2px 0 #2D2A24;
   }
   .nav-icon { font-size: 22px; flex-shrink: 0; }
   .nav-info { flex: 1; display: flex; flex-direction: column; gap: 1px; }
   .nav-street { font-size: 16px; font-weight: 800; color: #fff; }
-  .nav-dist   { font-size: 13px; color: rgba(255,255,255,0.75); font-weight: 600; }
+  .nav-dist   { font-size: 13px; color: rgba(255,255,255,0.8); font-weight: 500; }
   .nav-stop-btn {
-    background: rgba(255,255,255,0.2); border: none; color: #fff;
-    border-radius: 50%; width: 28px; height: 28px; font-size: 14px;
+    background: rgba(255,255,255,0.25); border: 1.5px solid rgba(255,255,255,0.5); color: #fff;
+    border-radius: 50%; width: 30px; height: 30px; font-size: 14px;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
   }
-  .route-nav-btn.nav-active { background: #ef4444; }
+  .nav-stop-btn:hover { background: rgba(255,255,255,0.4); }
 
+  /* ── animations ── */
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
   @keyframes spin  { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+  /* ── popup ── */
   .eco-popup .leaflet-popup-content-wrapper {
-    background: #1a1d27; border: 1px solid #2e3348; border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5); padding: 0; overflow: hidden; min-width: 160px;
+    background: #FFFFFF; border: 2px solid #2D2A24; border-radius: 14px;
+    box-shadow: 4px 4px 0 rgba(45,42,36,0.18); padding: 0; overflow: hidden; min-width: 170px;
   }
   .eco-popup .leaflet-popup-content { margin: 0; line-height: 1; }
-  .eco-popup .leaflet-popup-tip-container .leaflet-popup-tip { background: #1a1d27; }
-  .eco-popup .leaflet-popup-close-button { color: #7880a0 !important; font-size: 18px !important; top: 8px !important; right: 8px !important; }
+  .eco-popup .leaflet-popup-tip-container .leaflet-popup-tip { background: #FFFFFF; }
+  .eco-popup .leaflet-popup-close-button {
+    color: #7A7363 !important; font-size: 18px !important; top: 8px !important; right: 8px !important;
+  }
   .popup-inner {
     padding: 12px; display: flex; flex-direction: column; gap: 6px;
-    font-family: 'Heebo', sans-serif; align-items: flex-start;
+    font-family: 'Rubik', 'Heebo', sans-serif; align-items: flex-start;
   }
   .popup-chip {
     display: inline-flex; align-items: center; gap: 4px;
-    background: rgba(26,115,232,0.15); border-radius: 20px;
-    padding: 3px 9px; font-size: 11px; font-weight: 700; color: #60a5fa; margin: 0;
+    background: #DDE7CC; border: 1.5px solid #2D2A24; border-radius: 20px;
+    padding: 3px 9px; font-size: 11px; font-weight: 700; color: #2D4A2B; margin: 0;
+    box-shadow: 1px 1px 0 rgba(45,42,36,0.15);
   }
   .popup-street {
-    font-size: 16px; font-weight: 900; color: #e8eaf2; margin: 0;
+    font-size: 16px; font-weight: 800; color: #2D2A24; margin: 0;
     width: 100%; text-align: right;
   }
   .popup-sub {
-    font-size: 11px; color: #7880a0; margin: 0;
+    font-size: 11px; color: #7A7363; margin: 0;
     width: 100%; text-align: right;
   }
   .popup-photos {
@@ -700,38 +704,43 @@ const mapStyles = `
   .popup-photo-thumb {
     width: 72px; height: 72px; object-fit: cover;
     border-radius: 8px; flex-shrink: 0; cursor: zoom-in;
-    border: 1px solid #2e3348;
+    border: 2px solid #2D2A24; box-shadow: 2px 2px 0 rgba(45,42,36,0.15);
   }
   .popup-nav-btn {
     display: block; margin-top: 4px; width: 100%;
-    background: #1a73e8; color: #fff; border-radius: 8px;
-    border: none; cursor: pointer;
-    padding: 9px 12px; font-size: 13px; font-weight: 700;
-    text-align: center; font-family: 'Heebo', sans-serif;
+    background: #6B9956; color: #fff; border-radius: 10px;
+    border: 2px solid #2D2A24; box-shadow: 2px 2px 0 rgba(45,42,36,0.22);
+    cursor: pointer; padding: 9px 12px; font-size: 13px; font-weight: 700;
+    text-align: center; font-family: 'Rubik', 'Heebo', sans-serif;
+    transition: transform 0.1s;
   }
+  .popup-nav-btn:hover  { background: #5a8447; transform: translateY(-1px); }
+  .popup-nav-btn:active { transform: translateY(1px); box-shadow: 1px 1px 0 rgba(45,42,36,0.22); }
 
-  .leaflet-control-attribution { background: rgba(15,17,23,0.8) !important; color: #4a5070 !important; font-size: 9px !important; }
-  .leaflet-control-attribution a { color: #4a5070 !important; }
+  /* ── attribution ── */
+  .leaflet-control-attribution { background: rgba(245,242,232,0.85) !important; color: #B0A892 !important; font-size: 9px !important; }
+  .leaflet-control-attribution a { color: #7A7363 !important; }
 
   .popup-photo-click { cursor: zoom-in; }
 
+  /* ── lightbox ── */
   .lightbox-overlay {
     position: fixed; inset: 0; z-index: 9999;
-    background: rgba(0,0,0,0.92);
+    background: rgba(45,42,36,0.88);
     display: flex; align-items: center; justify-content: center;
     animation: fadeIn 0.18s ease;
   }
   .lightbox-img {
     max-width: 95vw; max-height: 88vh;
-    object-fit: contain; border-radius: 10px;
-    box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+    object-fit: contain; border-radius: 12px;
+    border: 3px solid #2D2A24; box-shadow: 6px 6px 0 rgba(45,42,36,0.4);
   }
   .lightbox-close {
     position: absolute; top: 18px; right: 18px;
-    background: rgba(255,255,255,0.15); border: none; color: #fff;
-    border-radius: 50%; width: 36px; height: 36px; font-size: 18px;
+    background: #F5F2E8; border: 2px solid #2D2A24; color: #2D2A24;
+    border-radius: 50%; width: 38px; height: 38px; font-size: 18px;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
-    backdrop-filter: blur(4px);
+    box-shadow: 2px 2px 0 rgba(45,42,36,0.25);
   }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .lightbox-close:hover { background: #EDE6D2; }
 `;
