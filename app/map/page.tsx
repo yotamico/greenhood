@@ -216,61 +216,63 @@ export default function MapPage() {
         </div>
       </div>
 
-      {/* ── FAB — shows when sheet is almost hidden ── */}
-      <div style={{
-        position: "absolute",
-        bottom: 100,
-        right: 20,
-        zIndex: 20,
-        opacity: isHidden ? 1 : 0,
-        pointerEvents: isHidden ? "auto" : "none",
-        transition: "opacity 200ms",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        gap: 10,
-      }}>
-        {/* "list" pill */}
-        <button
-          onClick={() => setSheetPct(DEFAULT)}
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "10px 16px",
-            background: "var(--ink)", color: "var(--paper)",
-            border: "2px solid var(--ink)",
-            borderRadius: 999, cursor: "pointer",
-            fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 14,
-            boxShadow: "var(--sh-md)",
-          }}
-        >
-          <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-            <path d="M6 15l6-6 6 6"/>
-          </svg>
-          רשימה
-          {displayed.length > 0 && (
-            <span style={{
-              minWidth: 22, height: 22, borderRadius: 999,
-              background: "var(--accent)", color: "white",
-              fontSize: 11, fontWeight: 800,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              padding: "0 5px", border: "1.5px solid var(--paper)",
-            }}>{displayed.length}</span>
-          )}
-        </button>
-        {/* report FAB */}
-        <button
-          onClick={() => router.push("/report")}
-          style={{
-            width: 56, height: 56, borderRadius: "50%",
-            background: "var(--primary)",
-            border: "2.5px solid var(--ink)",
-            boxShadow: "4px 4px 0 var(--shadow-ink)",
-            cursor: "pointer",
+      {/* ── "רשימה" pill — centered above tab bar ── */}
+      <button
+        onClick={() => setSheetPct(DEFAULT)}
+        style={{
+          position: "fixed",
+          bottom: 90,
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 25,
+          opacity: isHidden ? 1 : 0,
+          pointerEvents: isHidden ? "auto" : "none",
+          transition: "opacity 200ms",
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "10px 20px",
+          background: "var(--ink)", color: "var(--paper)",
+          border: "2px solid var(--ink)",
+          borderRadius: 999, cursor: "pointer",
+          fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 14,
+          boxShadow: "var(--sh-md)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+          <path d="M6 15l6-6 6 6"/>
+        </svg>
+        רשימה
+        {displayed.length > 0 && (
+          <span style={{
+            minWidth: 22, height: 22, borderRadius: 999,
+            background: "var(--accent)", color: "white",
+            fontSize: 11, fontWeight: 800,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 28, fontWeight: 900, color: "var(--ink)",
-          }}
-        >+</button>
-      </div>
+            padding: "0 5px", border: "1.5px solid var(--paper)",
+          }}>{displayed.length}</span>
+        )}
+      </button>
+
+      {/* ── "+" FAB — right edge above tab bar ── */}
+      <button
+        onClick={() => router.push("/report")}
+        style={{
+          position: "fixed",
+          bottom: 90,
+          right: 16,
+          zIndex: 25,
+          opacity: isHidden ? 1 : 0,
+          pointerEvents: isHidden ? "auto" : "none",
+          transition: "opacity 200ms",
+          width: 56, height: 56, borderRadius: "50%",
+          background: "var(--primary)",
+          border: "2.5px solid var(--ink)",
+          boxShadow: "4px 4px 0 var(--shadow-ink)",
+          cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 28, fontWeight: 900, color: "var(--ink)",
+        }}
+      >+</button>
 
       {/* ── BOTTOM SHEET ── */}
       <div
