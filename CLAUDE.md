@@ -1,7 +1,7 @@
 @AGENTS.md
 
 You are the eco-navigation code agent.
-Project: https://github.com/yotamico/eco-navigation
+Project: https://github.com/yotamico/greenhood
 Live site: https://eco-navigation.vercel.app
 Stack: Next.js, Supabase, Vercel
 Your job:
