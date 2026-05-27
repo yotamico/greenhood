@@ -1,78 +1,81 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Suspense } from "react";
 
-function AuthCallbackInner() {
+export default function AuthCallback() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    async function handleCallback() {
-      // Check for error in URL params (e.g. provider not enabled, user denied)
-      const error = searchParams.get("error");
-      const errorDescription = searchParams.get("error_description");
+    // Error in query string (e.g. provider disabled)
+    const params = new URLSearchParams(window.location.search);
+    const urlError = params.get("error");
+    if (urlError) {
+      setErrorMsg(params.get("error_description") ?? urlError);
+      return;
+    }
 
-      if (error) {
-        setErrorMsg(errorDescription ?? error);
-        return;
-      }
-
-      // PKCE flow — exchange the code for a session
-      const code = searchParams.get("code");
-      if (code) {
-        const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-        if (exchangeError) {
-          setErrorMsg(exchangeError.message);
-          return;
-        }
-      }
-
-      // Check session and route accordingly
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setErrorMsg("לא הצלחנו לאמת את הכניסה. נסה שוב.");
-        return;
-      }
-
-      // Check onboarding status
+    async function redirect(userId: string) {
       const { data: profile } = await supabase
         .from("profiles")
         .select("onboarded")
-        .eq("id", session.user.id)
+        .eq("id", userId)
         .single();
-
-      if (profile?.onboarded) {
-        router.replace("/map");
-      } else {
-        router.replace("/welcome");
-      }
+      router.replace(profile?.onboarded ? "/map" : "/welcome");
     }
 
-    handleCallback();
-  }, [router, searchParams]);
+    // ── Implicit flow: token arrives in URL hash (#access_token=…) ──
+    // Supabase SDK auto-detects the hash and fires SIGNED_IN.
+    // Listen first, then also check for an existing session.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        if (session) {
+          subscription.unsubscribe();
+          clearTimeout(timer);
+          await redirect(session.user.id);
+        }
+      }
+    );
+
+    // ── PKCE flow: code arrives as query param ──
+    const code = params.get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code)
+        .then(({ error }) => { if (error) setErrorMsg(error.message); })
+        .catch(() => {});
+    }
+
+    // ── Already have a session (e.g. page refresh) ──
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        subscription.unsubscribe();
+        clearTimeout(timer);
+        redirect(session.user.id);
+      }
+    });
+
+    // ── Timeout: if nothing resolves in 12 s show error ──
+    const timer = setTimeout(() => {
+      subscription.unsubscribe();
+      setErrorMsg("הכניסה פגה תוקף. נסה שוב.");
+    }, 12000);
+
+    return () => { subscription.unsubscribe(); clearTimeout(timer); };
+  }, [router]);
 
   if (errorMsg) {
     return (
       <div style={{
-        minHeight: "100dvh",
-        background: "var(--paper)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexDirection: "column",
-        gap: 16,
-        fontFamily: "var(--font-sans)",
-        padding: "0 24px",
-        textAlign: "center",
+        minHeight: "100dvh", background: "var(--paper)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexDirection: "column", gap: 16,
+        fontFamily: "var(--font-sans)", padding: "0 24px", textAlign: "center",
       }}>
         <div style={{ fontSize: 48 }}>😕</div>
         <div style={{
-          fontFamily: "var(--font-display)",
-          fontWeight: 900, fontSize: 20,
+          fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 20,
         }}>הכניסה נכשלה</div>
         <div style={{
           fontSize: 14, color: "var(--muted)",
@@ -81,8 +84,7 @@ function AuthCallbackInner() {
         <button
           onClick={() => router.replace("/login")}
           style={{
-            marginTop: 8,
-            padding: "12px 28px",
+            marginTop: 8, padding: "12px 28px",
             background: "var(--ink)", color: "var(--paper)",
             border: "2px solid var(--ink)", borderRadius: 14,
             fontFamily: "var(--font-sans)", fontWeight: 800,
@@ -96,40 +98,18 @@ function AuthCallbackInner() {
 
   return (
     <div style={{
-      minHeight: "100dvh",
-      background: "var(--paper)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      flexDirection: "column",
-      gap: 16,
-      fontFamily: "var(--font-sans)",
+      minHeight: "100dvh", background: "var(--paper)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      flexDirection: "column", gap: 16, fontFamily: "var(--font-sans)",
     }}>
       <div style={{
         width: 56, height: 56, borderRadius: "50%",
-        background: "var(--primary)",
-        border: "2px solid var(--ink)",
+        background: "var(--primary)", border: "2px solid var(--ink)",
         boxShadow: "3px 3px 0 var(--shadow-ink)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 28,
-        animation: "floatY 1.4s ease-in-out infinite",
+        fontSize: 28, animation: "floatY 1.4s ease-in-out infinite",
       }}>🌿</div>
       <p style={{ color: "var(--muted)", fontWeight: 600, fontSize: 15 }}>מתחבר…</p>
     </div>
-  );
-}
-
-export default function AuthCallback() {
-  return (
-    <Suspense fallback={
-      <div style={{
-        minHeight: "100dvh", background: "var(--paper)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }}>
-        <div style={{ fontSize: 32 }}>🌿</div>
-      </div>
-    }>
-      <AuthCallbackInner />
-    </Suspense>
   );
 }
