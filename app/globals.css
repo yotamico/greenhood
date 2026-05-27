@@ -1,26 +1,120 @@
 @import "tailwindcss";
 
+/* ───── GreenHOOD · Sage Calm Design Tokens ───── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --paper:         #F5F2E8;
+  --paper-2:       #EDE6D2;
+  --surface:       #FFFFFF;
+  --surface-elev:  #FAF6EB;
+
+  /* Ink scale */
+  --ink:           #2D2A24;
+  --ink-soft:      #4A4536;
+  --muted:         #7A7363;
+  --muted-2:       #B0A892;
+  --line:          rgba(45,42,36,0.10);
+  --line-strong:   rgba(45,42,36,0.28);
+  --shadow-ink:    rgba(45,42,36,0.18);
+
+  /* Brand */
+  --primary:       #6B9956;
+  --primary-dark:  #2D4A2B;
+  --primary-light: #A8C496;
+  --primary-tint:  #DDE7CC;
+
+  /* Accent (coral) */
+  --accent:        #C97464;
+  --accent-dark:   #8E4A3D;
+  --accent-tint:   #F0D5CB;
+
+  /* Warning (mustard) */
+  --warning:       #D9A574;
+  --warning-dark:  #A87644;
+  --warning-tint:  #F0DBC0;
+
+  /* Info (dusty blue) */
+  --info:          #6B8FA8;
+  --info-tint:     #C9D8E2;
+
+  /* Typography */
+  --font-display:  var(--font-rubik, "Rubik"), system-ui, sans-serif;
+  --font-sans:     var(--font-rubik, "Rubik"), system-ui, sans-serif;
+  --font-mono:     "JetBrains Mono", ui-monospace, monospace;
+
+  /* Radii */
+  --r-xs: 6px; --r-sm: 10px; --r-md: 14px;
+  --r-lg: 20px; --r-xl: 28px; --r-full: 999px;
+
+  /* Offset shadows (the Sage Calm signature) */
+  --sh-sm: 2px 2px 0 var(--shadow-ink);
+  --sh-md: 3px 3px 0 var(--shadow-ink);
+  --sh-lg: 5px 5px 0 var(--shadow-ink);
+  --sh-xl: 7px 7px 0 var(--shadow-ink);
+
+  /* Motion */
+  --ease:        cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --d-fast: 120ms; --d-base: 200ms; --d-slow: 320ms;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ───── Base ───── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ───── Scrollbar ───── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+/* ───── GH Utility ───── */
+.gh-card {
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-md);
+}
+
+.gh-input {
+  width: 100%;
+  padding: 0 16px;
+  height: 48px;
+  background: var(--surface);
+  border: 2px solid var(--ink);
+  border-radius: var(--r-md);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  box-shadow: var(--sh-md);
+  outline: none;
+  transition: box-shadow var(--d-fast);
+  text-align: right;
+}
+
+.gh-input:focus {
+  box-shadow: 0 0 0 3px var(--primary-tint), var(--sh-md);
+}
+
+.gh-input::placeholder { color: var(--muted); }
+
+/* ───── Animations ───── */
+@keyframes ghPulse {
+  0%   { transform: scale(0.5); opacity: 0.4; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-8px); }
 }

@@ -10,8 +10,8 @@ const rubik = Rubik({
 });
 
 export const metadata: Metadata = {
-  title: "GreenHOOD — מציאות",
-  description: "פלטפורמה חברתית לכלכלת רחוב מעגלית",
+  title: "GreenHOOD",
+  description: "מציאות ברחוב — פלטפורמה חברתית לכלכלת רחוב מעגלית",
 };
 
 export default function RootLayout({
@@ -20,12 +20,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="he"
-      dir="rtl"
-      className={`${rubik.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="he" dir="rtl" className={`${rubik.variable} h-full`}>
+      <body className="min-h-full" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+        {children}
+      </body>
     </html>
   );
 }

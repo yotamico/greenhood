@@ -1,0 +1,488 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+
+/* ──────────────────────────────────────────────────────────
+   Types
+────────────────────────────────────────────────────────── */
+type Persona = "hunter" | "upcycler" | "vintage" | "reporter" | "org";
+
+const PERSONAS: {
+  id: Persona; label: string; sub: string; emoji: string; color: string;
+}[] = [
+  { id: "hunter",   label: "ציידת / ציידי מציאות", sub: "מחפש/ת כלים וחפצים",    emoji: "🎯", color: "var(--accent-tint)"   },
+  { id: "upcycler", label: "משפץ / מעצב/ת",        sub: "נותן/ת חיים חדשים",      emoji: "🔧", color: "var(--warning-tint)"  },
+  { id: "vintage",  label: "חובב/ת וינטג׳",         sub: "אוסף/ת פריטים נדירים",   emoji: "🪑", color: "var(--info-tint)"    },
+  { id: "reporter", label: "מדווח/ת על פריטים",     sub: "מפרסם/ת מה שמצאת",      emoji: "📦", color: "var(--primary-light)" },
+  { id: "org",      label: "ארגון / צוות",           sub: "אוסף עבור קהילה",        emoji: "♻️", color: "var(--paper-2)"      },
+];
+
+/* ──────────────────────────────────────────────────────────
+   Floating sticker
+────────────────────────────────────────────────────────── */
+function FloatSticker({
+  emoji, color, style,
+}: {
+  emoji: string; color: string; style?: React.CSSProperties;
+}) {
+  return (
+    <div style={{
+      position: "absolute",
+      width: 56, height: 56,
+      background: color,
+      borderRadius: 14,
+      border: "2px solid var(--ink)",
+      boxShadow: "3px 3px 0 var(--shadow-ink)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: 28,
+      animation: "floatY 2.8s ease-in-out infinite",
+      ...style,
+    }}>{emoji}</div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   Progress dots
+────────────────────────────────────────────────────────── */
+function ProgressDots({ step, total }: { step: number; total: number }) {
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      {Array.from({ length: total }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            height: 8,
+            width: i === step ? 28 : 8,
+            borderRadius: 999,
+            background: i <= step ? "var(--ink)" : "var(--paper-2)",
+            border: "1.5px solid var(--ink)",
+            transition: "width 200ms ease",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   Step 0 – Welcome
+────────────────────────────────────────────────────────── */
+function StepWelcome() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+      {/* Illustration */}
+      <div style={{ position: "relative", width: 240, height: 240, margin: "24px auto 32px", flexShrink: 0 }}>
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "var(--primary-tint)",
+          borderRadius: "50%",
+          border: "2.5px solid var(--ink)",
+          boxShadow: "5px 5px 0 var(--shadow-ink)",
+        }} />
+        <FloatSticker emoji="🪑" color="var(--warning-tint)" style={{ top: 20,  right: -10, animationDelay: "0s",   transform: "rotate(-8deg)" }} />
+        <FloatSticker emoji="📚" color="var(--accent-tint)"  style={{ top: 50,  left: -8,   animationDelay: "0.4s", transform: "rotate(12deg)" }} />
+        <FloatSticker emoji="💡" color="var(--info-tint)"    style={{ bottom: 32, left: 10,  animationDelay: "0.8s", transform: "rotate(-15deg)" }} />
+        <FloatSticker emoji="🌿" color="var(--primary-light)" style={{ bottom: 12, right: 14, animationDelay: "1.2s", transform: "rotate(8deg)" }} />
+
+        {/* center pin */}
+        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}>
+          <div style={{
+            width: 70, height: 70,
+            borderRadius: "50% 50% 50% 0",
+            background: "var(--accent)",
+            border: "3px solid var(--ink)",
+            transform: "rotate(-45deg)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "4px 4px 0 var(--shadow-ink)",
+          }}>
+            <span style={{ transform: "rotate(45deg)", fontSize: 32 }}>📍</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Text */}
+      <span style={{
+        fontFamily: "var(--font-display)",
+        fontSize: 38, fontWeight: 900,
+        letterSpacing: "-0.035em", lineHeight: 1,
+        color: "var(--ink)",
+        marginBottom: 14,
+      }}>
+        Green<span style={{ color: "var(--primary-dark)" }}>HOOD</span>
+      </span>
+
+      <h1 style={{
+        fontFamily: "var(--font-display)",
+        fontSize: 28, fontWeight: 900,
+        lineHeight: 1.1, letterSpacing: "-0.02em",
+        color: "var(--ink)",
+        textAlign: "center",
+        margin: "0 0 12px",
+      }}>
+        מציאות ברחוב,<br />חיים חדשים לחפצים
+      </h1>
+
+      <p style={{
+        fontSize: 15, color: "var(--ink-soft)", fontWeight: 500,
+        lineHeight: 1.55, textAlign: "center",
+        maxWidth: 320, margin: 0,
+      }}>
+        גלה/י פריטים שאנשים זרקו ברחוב. שתף/י מה שמצאת, מצא/י מה שאתה/ת מחפש/ת, ויחד נחסוך מהאשפה.
+      </p>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   Step 1 – Persona
+────────────────────────────────────────────────────────── */
+function StepPersona({
+  personas, setPersonas,
+}: {
+  personas: Persona[]; setPersonas: (p: Persona[]) => void;
+}) {
+  function toggle(id: Persona) {
+    setPersonas(
+      personas.includes(id)
+        ? personas.filter(p => p !== id)
+        : [...personas, id],
+    );
+  }
+
+  return (
+    <div>
+      <h2 style={{
+        fontFamily: "var(--font-display)",
+        fontSize: 30, fontWeight: 900, lineHeight: 1.1,
+        letterSpacing: "-0.02em", margin: "0 0 8px",
+      }}>
+        מי את/ה כאן?
+      </h2>
+      <p style={{ fontSize: 14, color: "var(--muted)", fontWeight: 500, margin: "0 0 24px" }}>
+        בחר/י אחד או יותר — נתאים את הפיד.
+      </p>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {PERSONAS.map(p => {
+          const active = personas.includes(p.id);
+          return (
+            <button
+              key={p.id}
+              onClick={() => toggle(p.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 14,
+                padding: 14, textAlign: "right", width: "100%",
+                background: active ? p.color : "var(--surface)",
+                border: "2px solid var(--ink)",
+                borderRadius: 14,
+                boxShadow: active ? "4px 4px 0 var(--shadow-ink)" : "1.5px 1.5px 0 var(--shadow-ink)",
+                cursor: "pointer",
+                fontFamily: "var(--font-sans)",
+                transform: active ? "translate(-1px,-1px)" : "none",
+                transition: "all 120ms",
+              }}
+            >
+              <div style={{
+                width: 48, height: 48, borderRadius: 12,
+                background: "var(--surface)", border: "2px solid var(--ink)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 24, flexShrink: 0,
+              }}>{p.emoji}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 16 }}>{p.label}</div>
+                <div style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 500, marginTop: 2 }}>{p.sub}</div>
+              </div>
+              <div style={{
+                width: 26, height: 26, borderRadius: "50%",
+                background: active ? "var(--ink)" : "transparent",
+                border: "2px solid var(--ink)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0, fontSize: 14, color: "var(--paper)",
+                fontWeight: 800,
+              }}>
+                {active ? "✓" : ""}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   Step 2 – Location
+────────────────────────────────────────────────────────── */
+function StepLocation({
+  locGranted, setLocGranted,
+}: {
+  locGranted: boolean; setLocGranted: (v: boolean) => void;
+}) {
+  function requestLocation() {
+    if (!navigator.geolocation) { setLocGranted(true); return; }
+    navigator.geolocation.getCurrentPosition(
+      () => setLocGranted(true),
+      () => setLocGranted(true), // allow skip on deny
+    );
+  }
+
+  return (
+    <div>
+      <h2 style={{
+        fontFamily: "var(--font-display)",
+        fontSize: 30, fontWeight: 900, lineHeight: 1.1,
+        letterSpacing: "-0.02em", margin: "0 0 8px",
+      }}>
+        איפה אתה/את?
+      </h2>
+      <p style={{ fontSize: 14, color: "var(--muted)", fontWeight: 500, margin: "0 0 20px" }}>
+        כדי להציג מציאות קרובות. לא נשמור ללא רשות.
+      </p>
+
+      {/* Mini map preview */}
+      <div style={{
+        height: 190,
+        background: "var(--paper-2)",
+        borderRadius: 16,
+        border: "2px solid var(--ink)",
+        boxShadow: "4px 4px 0 var(--shadow-ink)",
+        overflow: "hidden",
+        marginBottom: 20,
+        position: "relative",
+      }}>
+        {/* grid */}
+        <div style={{
+          position: "absolute", inset: 0,
+          backgroundImage: `
+            linear-gradient(rgba(45,42,36,0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(45,42,36,0.06) 1px, transparent 1px)
+          `,
+          backgroundSize: "28px 28px",
+        }} />
+        <svg width="100%" height="100%" viewBox="0 0 380 190" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0 }}>
+          <g stroke="var(--paper)" strokeWidth="14" fill="none" strokeLinecap="round">
+            <path d="M-10,70 Q120,65 200,80 T390,75" />
+            <path d="M130,-10 Q135,90 125,200" />
+            <path d="M260,-10 Q255,95 265,200" />
+          </g>
+          <g stroke="var(--ink)" strokeWidth="1" fill="none" opacity="0.4">
+            <path d="M-10,70 Q120,65 200,80 T390,75" />
+            <path d="M130,-10 Q135,90 125,200" />
+            <path d="M260,-10 Q255,95 265,200" />
+          </g>
+          <rect x="20" y="15" width="65" height="40" rx="8" fill="var(--primary-tint)" stroke="var(--ink)" strokeWidth="1.5" />
+          <rect x="158" y="100" width="55" height="50" rx="8" fill="var(--surface)" stroke="var(--ink)" strokeWidth="1.5" />
+        </svg>
+
+        {/* pins */}
+        <div style={{ position: "absolute", top: 75, right: 95, fontSize: 22 }}>📍</div>
+        <div style={{ position: "absolute", top: 50, right: 180, fontSize: 18 }}>📦</div>
+
+        {/* me dot */}
+        {locGranted && (
+          <div style={{
+            position: "absolute", top: 115, right: 155,
+            width: 14, height: 14, borderRadius: "50%",
+            background: "var(--info)", border: "2.5px solid var(--ink)",
+            boxShadow: "0 0 0 3px white",
+          }} />
+        )}
+
+        {/* label */}
+        <div style={{
+          position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)",
+          background: "var(--surface)", borderRadius: 999,
+          border: "1.5px solid var(--ink)",
+          padding: "6px 14px",
+          fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+        }}>
+          {locGranted ? "✅ מיקום הופעל" : "📍 לחץ/י כדי להפעיל"}
+        </div>
+      </div>
+
+      {/* permission card */}
+      <div style={{
+        background: "var(--primary-tint)", borderRadius: 16,
+        border: "2px solid var(--ink)", boxShadow: "3px 3px 0 var(--shadow-ink)",
+        padding: 16, marginBottom: 12,
+      }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "start", marginBottom: 14 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 12,
+            background: "var(--primary)", border: "2px solid var(--ink)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 20, flexShrink: 0,
+          }}>📍</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 3 }}>גישה למיקום</div>
+            <div style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.5, fontWeight: 500 }}>
+              כדי להציג מציאות בקרבתך ולנווט אליהן. תמיד ניתן לבטל.
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={requestLocation}
+          style={{
+            width: "100%", height: 48,
+            background: locGranted ? "var(--primary-light)" : "var(--primary)",
+            color: "var(--ink)",
+            border: "2px solid var(--ink)",
+            borderRadius: "var(--r-md)",
+            fontFamily: "var(--font-sans)",
+            fontWeight: 700, fontSize: 15,
+            cursor: "pointer",
+            boxShadow: "var(--sh-md)",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}
+        >
+          {locGranted ? "✅ מיקום אושר" : "📍 אפשר מיקום"}
+        </button>
+      </div>
+
+      <button
+        onClick={() => setLocGranted(true)}
+        style={{
+          width: "100%", padding: "12px",
+          background: "transparent",
+          border: "1.5px dashed var(--ink)",
+          borderRadius: 12,
+          cursor: "pointer", fontFamily: "var(--font-sans)",
+          fontSize: 13, fontWeight: 600, color: "var(--ink-soft)",
+        }}
+      >
+        אדאג לזה אחר כך
+      </button>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────
+   Main onboarding page
+────────────────────────────────────────────────────────── */
+export default function WelcomePage() {
+  const router = useRouter();
+  const [step, setStep]           = useState(0);
+  const [personas, setPersonas]   = useState<Persona[]>([]);
+  const [locGranted, setLocGranted] = useState(false);
+  const [saving, setSaving]       = useState(false);
+
+  const TOTAL = 3;
+
+  async function finish() {
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from("profiles").upsert({
+          id: user.id,
+          personas,
+          onboarded: true,
+        }, { onConflict: "id" });
+      }
+    } catch { /* ignore */ }
+    setSaving(false);
+    router.replace("/");
+  }
+
+  function handleNext() {
+    if (step < TOTAL - 1) { setStep(step + 1); }
+    else { finish(); }
+  }
+
+  const ctaLabel =
+    step === 0 ? "יאללה, מתחילים ←" :
+    step === 1 ? (personas.length > 0 ? `המשך עם ${personas.length} בחירות ←` : "המשך ←") :
+    saving ? "שמירה…" : "סיום וכניסה לאפליקציה ✓";
+
+  return (
+    <div style={{
+      minHeight: "100dvh",
+      background: "var(--paper)",
+      display: "flex",
+      flexDirection: "column",
+      fontFamily: "var(--font-sans)",
+      maxWidth: 480,
+      margin: "0 auto",
+      padding: "0 0 env(safe-area-inset-bottom)",
+    }}>
+      {/* header */}
+      <div style={{
+        padding: "20px 20px 16px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        flexShrink: 0,
+      }}>
+        {step > 0 ? (
+          <button
+            onClick={() => setStep(step - 1)}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "var(--ink)", fontWeight: 700, fontSize: 14,
+              fontFamily: "var(--font-sans)", padding: 0,
+              display: "flex", alignItems: "center", gap: 4,
+            }}
+          >
+            → חזור
+          </button>
+        ) : <div style={{ width: 60 }} />}
+
+        <ProgressDots step={step} total={TOTAL} />
+
+        <button
+          onClick={finish}
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            color: "var(--muted)", fontWeight: 500, fontSize: 14,
+            fontFamily: "var(--font-sans)", padding: 0,
+          }}
+        >
+          דלג
+        </button>
+      </div>
+
+      {/* content */}
+      <div style={{
+        flex: 1,
+        overflowY: "auto",
+        padding: "0 20px",
+        display: "flex",
+        flexDirection: "column",
+      }}>
+        {step === 0 && <StepWelcome />}
+        {step === 1 && <StepPersona personas={personas} setPersonas={setPersonas} />}
+        {step === 2 && <StepLocation locGranted={locGranted} setLocGranted={setLocGranted} />}
+      </div>
+
+      {/* CTA */}
+      <div style={{
+        padding: "16px 20px 32px",
+        background: "var(--surface)",
+        borderTop: "2px solid var(--ink)",
+        flexShrink: 0,
+      }}>
+        <button
+          onClick={handleNext}
+          disabled={saving}
+          style={{
+            width: "100%", height: 56,
+            background: saving ? "var(--primary-tint)" : "var(--primary)",
+            color: "var(--ink)",
+            border: "2px solid var(--ink)",
+            borderRadius: "var(--r-md)",
+            fontFamily: "var(--font-sans)",
+            fontWeight: 700, fontSize: 17,
+            cursor: saving ? "not-allowed" : "pointer",
+            boxShadow: "var(--sh-md)",
+            transition: "transform 120ms, box-shadow 120ms",
+          }}
+          onMouseDown={e => { if (!saving) { e.currentTarget.style.transform = "translate(2px,2px)"; e.currentTarget.style.boxShadow = "none"; }}}
+          onMouseUp={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "var(--sh-md)"; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "var(--sh-md)"; }}
+        >
+          {ctaLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
