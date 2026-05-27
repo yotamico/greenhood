@@ -40,6 +40,14 @@ export default function ReportPage() {
   const [lng,       setLng]       = useState<number|null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  /* auto-open camera as soon as page is ready */
+  useEffect(() => {
+    if (authed && step === 1 && !photo) {
+      const t = setTimeout(() => fileRef.current?.click(), 150);
+      return () => clearTimeout(t);
+    }
+  }, [authed, step, photo]);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.replace("/login"); return; }
