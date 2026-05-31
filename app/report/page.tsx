@@ -338,7 +338,7 @@ function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles
           overflow:"hidden",
           display:"flex", alignItems:"center", justifyContent:"center",
           cursor: primaryUrl ? "default" : "pointer",
-          marginBottom: extras.length > 0 ? 24 : 14,
+          marginBottom: extras.length > 0 ? 42 : 14,
         }}
       >
         {primaryUrl ? (
