@@ -196,8 +196,9 @@ function MasonryCard({ item, saved, onSave, onPress, today, tomorrow, tomorrowSt
   const photoUrl = item.item_images?.find(img => img.is_primary)?.url
                 ?? item.item_images?.[0]?.url
                 ?? null;
-  /* vary card image height based on title length for natural masonry */
-  const h = 120 + (item.title.length % 4) * 20;
+  /* deterministic but varied card image height — 3 distinct sizes based on item id */
+  const seed = item.id.charCodeAt(0) + item.id.charCodeAt(2) + item.id.charCodeAt(4);
+  const h = [120, 168, 212][seed % 3];
 
   return (
     <div onClick={onPress} style={{
