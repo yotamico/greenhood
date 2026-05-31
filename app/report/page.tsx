@@ -389,17 +389,18 @@ function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles
                         display:"block",
                       }}
                     />
-                    {/* ✕ button — inside thumbnail top-right so overflow:hidden never clips it */}
+                    {/* ✕ button — outside thumbnail corner, still inside main image bounds */}
                     <button
                       onClick={e => { e.stopPropagation(); onRemove(i + 1); }}
                       style={{
-                        position:"absolute", top:4, right:4,
-                        width:20, height:20, borderRadius:"50%",
-                        background:"rgba(45,42,36,0.82)", color:"white",
-                        border:"1.5px solid white",
+                        position:"absolute", top:-8, right:-8,
+                        width:22, height:22, borderRadius:"50%",
+                        background:"rgba(45,42,36,0.9)", color:"white",
+                        border:"2px solid white",
                         display:"flex", alignItems:"center", justifyContent:"center",
-                        cursor:"pointer", fontSize:10, padding:0, fontWeight:800,
+                        cursor:"pointer", fontSize:11, padding:0, fontWeight:800,
                         lineHeight:1,
+                        zIndex:2,
                       }}
                     >✕</button>
                   </div>
