@@ -331,7 +331,6 @@ function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles
         style={{
           position:"relative",
           aspectRatio:"4/5",
-          maxHeight:"min(380px, 48vh)",
           background: primaryUrl ? "transparent" : "var(--paper-2)",
           borderRadius:16,
           border:`2px ${primaryUrl ? "solid" : "dashed"} var(--ink)`,
