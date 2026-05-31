@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
@@ -55,9 +55,20 @@ function snapTo(pct: number) {
   return HIDDEN;
 }
 
+interface NavDest { lat: number; lng: number; title: string; }
+
+function fmtDist(m: number) {
+  return m < 1000 ? `${Math.round(m)} מ'` : `${(m / 1000).toFixed(1)} ק"מ`;
+}
+function fmtDur(s: number) {
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m} דק'` : `${Math.floor(m / 60)} ש' ${m % 60} דק'`;
+}
+
 /* ─────────────────────────────────────────────────────────── */
-export default function MapPage() {
+function MapPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [authed, setAuthed]       = useState(false);
   const [items,  setItems]        = useState<Item[]>([]);
   const [cat,    setCat]          = useState("all");
@@ -67,6 +78,59 @@ export default function MapPage() {
   const [userPos, setUserPos]     = useState<[number,number] | null>(null);
   const dragRef = useRef({ startY: 0, startPct: DEFAULT });
 
+  const [centerTrigger, setCenterTrigger] = useState(0);
+
+  /* ── auto-center refs ── */
+  const hasInitialCentered  = useRef(false);
+  const lastInteractTimeRef = useRef(0);
+  const userPosRef          = useRef<[number,number] | null>(null);
+  const navDestRef          = useRef<NavDest | null>(null);
+  userPosRef.current  = userPos;
+
+  /* initial auto-center — fires once when position first arrives */
+  useEffect(() => {
+    if (userPos && !hasInitialCentered.current) {
+      hasInitialCentered.current = true;
+      lastInteractTimeRef.current = Date.now();
+      setCenterTrigger(t => t + 1);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userPos]);
+
+  /* idle auto-center — re-centers after 5 s of no screen interaction */
+  useEffect(() => {
+    function onInteraction() {
+      lastInteractTimeRef.current = Date.now();
+    }
+    document.addEventListener("touchstart", onInteraction, { passive: true });
+    document.addEventListener("pointerdown", onInteraction, { passive: true });
+
+    const iv = setInterval(() => {
+      if (!hasInitialCentered.current) return;
+      if (!userPosRef.current) return;
+      if (navDestRef.current) return; // skip during active navigation
+      if (Date.now() - lastInteractTimeRef.current >= 5000) {
+        setCenterTrigger(t => t + 1);
+        lastInteractTimeRef.current = Date.now(); // prevent continuous firing
+      }
+    }, 1000);
+
+    return () => {
+      document.removeEventListener("touchstart", onInteraction);
+      document.removeEventListener("pointerdown", onInteraction);
+      clearInterval(iv);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* navigation mode */
+  const [navDest,  setNavDest]  = useState<NavDest | null>(null);
+  const [navRoute, setNavRoute] = useState<[number,number][] | null>(null);
+  const [navInfo,  setNavInfo]  = useState<{ dist: number; dur: number } | null>(null);
+  /* dedup ref — tracks which destination we already fetched a route for */
+  const routeDestRef = useRef<string | null>(null);
+  navDestRef.current = navDest;
+
   /* auth guard */
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -75,20 +139,70 @@ export default function MapPage() {
     });
   }, [router]);
 
-  /* geolocation */
+  /* geolocation — watch position for live navigation */
   useEffect(() => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
+    if (!navigator.geolocation) { setUserPos([31.9297, 34.8307]); return; }
+    const id = navigator.geolocation.watchPosition(
       pos => setUserPos([pos.coords.latitude, pos.coords.longitude]),
-      () => setUserPos([31.9297, 34.8307]), // fallback: nes ziona
+      () => setUserPos([31.9297, 34.8307]),
+      { enableHighAccuracy: true, maximumAge: 5000 },
     );
+    return () => navigator.geolocation.clearWatch(id);
   }, []);
+
+  /* react to nav params — runs on mount AND whenever URL changes */
+  useEffect(() => {
+    const lat   = searchParams.get("nav_lat");
+    const lng   = searchParams.get("nav_lng");
+    const title = searchParams.get("nav_title") ?? "יעד";
+    if (lat && lng) {
+      routeDestRef.current = null; // reset so the new dest gets a fresh fetch
+      setNavRoute(null);
+      setNavInfo(null);
+      setNavDest({ lat: parseFloat(lat), lng: parseFloat(lng), title });
+      setSheetPct(HIDDEN); // collapse sheet to show full map
+    } else {
+      routeDestRef.current = null;
+      setNavDest(null);
+      setNavRoute(null);
+      setNavInfo(null);
+    }
+  }, [searchParams]);
+
+  /* fetch OSRM route — re-runs when either navDest OR userPos changes.
+     The dedup ref prevents re-fetching on every GPS position update. */
+  useEffect(() => {
+    if (!navDest || !userPos) return;
+    const key = `${navDest.lat.toFixed(5)},${navDest.lng.toFixed(5)}`;
+    if (routeDestRef.current === key) return; // already fetched for this dest
+    routeDestRef.current = key;
+
+    const [uLat, uLng] = userPos;
+    fetch(
+      `https://router.project-osrm.org/route/v1/driving/${uLng},${uLat};${navDest.lng},${navDest.lat}?overview=full&geometries=geojson`
+    )
+      .then(r => r.json())
+      .then(d => {
+        const route = d.routes?.[0];
+        if (!route) return;
+        const coords: [number,number][] = route.geometry.coordinates.map(
+          ([lng, lat]: [number, number]) => [lat, lng] as [number, number]
+        );
+        setNavRoute(coords);
+        setNavInfo({ dist: route.distance, dur: route.duration });
+      })
+      .catch(() => { routeDestRef.current = null; }); // allow retry on error
+  }, [navDest, userPos]);
 
   /* fetch items */
   useEffect(() => {
     if (!authed) return;
-    let q = supabase.from("items").select("id,title,category,condition,address,created_at,status,location").eq("status","active").order("created_at",{ascending:false}).limit(50);
-    supabase.from("items").select("id,title,category,condition,address,created_at,status").eq("status","active").order("created_at",{ascending:false}).limit(50)
+    supabase
+      .from("items")
+      .select("id,title,category,condition,address,created_at,status,lat,lng")
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(50)
       .then(({ data }) => {
         setItems((data as Item[]) ?? []);
       });
@@ -132,88 +246,112 @@ export default function MapPage() {
     }}>
       {/* ── MAP ── */}
       <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-        <GHMap userPos={userPos} items={items} />
+        <GHMap
+          userPos={userPos}
+          items={items}
+          onItemClick={id => router.push(`/items/${id}`)}
+          navRoute={navRoute}
+          navDest={navDest}
+          centerTrigger={centerTrigger}
+        />
       </div>
 
       {/* ── TOP BAR ── */}
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0,
         zIndex: 10,
-        padding: "12px 16px 14px",
-        background: "linear-gradient(to bottom, rgba(245,242,232,0.97) 65%, transparent)",
       }}>
-        {/* Search */}
-        <div style={{
-          display: "flex", gap: 10, alignItems: "center", marginBottom: 12,
-        }}>
+        {navDest ? (
+          /* ── Navigation banner ── */
           <div style={{
-            flex: 1,
-            display: "flex", alignItems: "center", gap: 10,
-            padding: "0 14px", height: 48,
-            background: "var(--surface)",
-            border: "2px solid var(--ink)",
-            borderRadius: "var(--r-md)",
-            boxShadow: "var(--sh-md)",
+            padding: "14px 16px",
+            background: "var(--ink)",
+            color: "var(--paper)",
+            display: "flex", alignItems: "center", gap: 12,
+            boxShadow: "0 4px 0 rgba(45,42,36,0.18)",
           }}>
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={1.8} strokeLinecap="round">
-              <circle cx={11} cy={11} r={6}/><path d="M20 20l-4.5-4.5"/>
-            </svg>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="חפש/י פריטים…"
-              style={{
-                flex: 1, background: "none", border: "none", outline: "none",
-                fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 500,
-                color: "var(--ink)", textAlign: "right", direction: "rtl",
-              }}
-            />
-          </div>
-          {/* Layers btn */}
-          <button
-            onClick={() => router.push("/report")}
-            style={{
-              width: 48, height: 48,
-              background: "var(--primary)",
-              color: "var(--ink)",
-              border: "2px solid var(--ink)",
-              borderRadius: "var(--r-md)",
-              boxShadow: "var(--sh-md)",
-              cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 22,
-            }}
-            title="דווח פריט חדש"
-          >
-            +
-          </button>
-        </div>
-
-        {/* Filter chips */}
-        <div style={{
-          display: "flex", gap: 8,
-          overflowX: "auto", paddingBottom: 4,
-          scrollbarWidth: "none",
-        }}>
-          {CATS.map(c => (
+            <div style={{ fontSize: 26 }}>🧭</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontFamily: "var(--font-display)", fontWeight: 900,
+                fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+              }}>{navDest.title}</div>
+              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 2 }}>
+                {navInfo
+                  ? `${fmtDist(navInfo.dist)} · ${fmtDur(navInfo.dur)}`
+                  : navRoute ? "מסלול מוצג" : "מחשב מסלול…"}
+              </div>
+            </div>
             <button
-              key={c.key}
-              onClick={() => setCat(c.key)}
+              onClick={() => { setNavDest(null); setNavRoute(null); setNavInfo(null); router.replace("/map"); }}
               style={{
-                padding: "7px 14px", height: 34,
-                background: cat === c.key ? "var(--ink)" : "var(--surface)",
-                color: cat === c.key ? "var(--paper)" : "var(--ink)",
-                border: "1.5px solid var(--ink)",
-                borderRadius: 999,
-                fontFamily: "var(--font-sans)",
-                fontWeight: 700, fontSize: 13,
-                cursor: "pointer", flexShrink: 0,
-                boxShadow: cat === c.key ? "2px 2px 0 var(--shadow-ink)" : "1px 1px 0 var(--shadow-ink)",
-                whiteSpace: "nowrap",
+                padding: "8px 14px", borderRadius: 10,
+                background: "rgba(255,255,255,0.15)",
+                border: "1.5px solid rgba(255,255,255,0.35)",
+                color: "var(--paper)", cursor: "pointer",
+                fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
+                flexShrink: 0,
               }}
-            >{c.label}</button>
-          ))}
-        </div>
+            >✕ בטל</button>
+          </div>
+        ) : (
+          /* ── Normal search + filter bar ── */
+          <div style={{
+            padding: "12px 16px 14px",
+            background: "linear-gradient(to bottom, rgba(245,242,232,0.97) 65%, transparent)",
+          }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+              <div style={{
+                flex: 1, display: "flex", alignItems: "center", gap: 10,
+                padding: "0 14px", height: 48,
+                background: "var(--surface)",
+                border: "2px solid var(--ink)",
+                borderRadius: "var(--r-md)",
+                boxShadow: "var(--sh-md)",
+              }}>
+                <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={1.8} strokeLinecap="round">
+                  <circle cx={11} cy={11} r={6}/><path d="M20 20l-4.5-4.5"/>
+                </svg>
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="חפש/י פריטים…"
+                  style={{
+                    flex: 1, background: "none", border: "none", outline: "none",
+                    fontFamily: "var(--font-sans)", fontSize: 15, fontWeight: 500,
+                    color: "var(--ink)", textAlign: "right", direction: "rtl",
+                  }}
+                />
+              </div>
+              <button
+                onClick={() => router.push("/report")}
+                style={{
+                  width: 48, height: 48, background: "var(--primary)", color: "var(--ink)",
+                  border: "2px solid var(--ink)", borderRadius: "var(--r-md)", boxShadow: "var(--sh-md)",
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22,
+                }}
+              >+</button>
+            </div>
+            <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
+              {CATS.map(c => (
+                <button
+                  key={c.key}
+                  onClick={() => setCat(c.key)}
+                  style={{
+                    padding: "7px 14px", height: 34,
+                    background: cat === c.key ? "var(--ink)" : "var(--surface)",
+                    color: cat === c.key ? "var(--paper)" : "var(--ink)",
+                    border: "1.5px solid var(--ink)", borderRadius: 999,
+                    fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
+                    cursor: "pointer", flexShrink: 0,
+                    boxShadow: cat === c.key ? "2px 2px 0 var(--shadow-ink)" : "1px 1px 0 var(--shadow-ink)",
+                    whiteSpace: "nowrap",
+                  }}
+                >{c.label}</button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── "רשימה" pill — centered above tab bar ── */}
@@ -273,6 +411,34 @@ export default function MapPage() {
           fontSize: 28, fontWeight: 900, color: "var(--ink)",
         }}
       >+</button>
+
+      {/* ── Locate Me FAB — left edge above tab bar ── */}
+      <button
+        onClick={() => userPos && setCenterTrigger(t => t + 1)}
+        style={{
+          position: "fixed",
+          bottom: 90,
+          left: 16,
+          zIndex: 25,
+          opacity: isHidden ? 1 : 0,
+          pointerEvents: isHidden ? "auto" : "none",
+          transition: "opacity 200ms",
+          width: 56, height: 56, borderRadius: "50%",
+          background: "var(--surface)",
+          border: "2.5px solid var(--ink)",
+          boxShadow: "4px 4px 0 var(--shadow-ink)",
+          cursor: userPos ? "pointer" : "not-allowed",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+        title="מרכז אל מיקומי"
+      >
+        <svg width={22} height={22} viewBox="0 0 24 24" fill="none"
+          stroke="var(--ink)" strokeWidth={2.2} strokeLinecap="round">
+          <circle cx={12} cy={12} r={3} fill="var(--primary)" stroke="var(--ink)"/>
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+          <circle cx={12} cy={12} r={7}/>
+        </svg>
+      </button>
 
       {/* ── BOTTOM SHEET ── */}
       <div
@@ -363,6 +529,14 @@ export default function MapPage() {
         <TabBar />
       </div>
     </div>
+  );
+}
+
+export default function MapPage() {
+  return (
+    <Suspense>
+      <MapPageInner />
+    </Suspense>
   );
 }
 
