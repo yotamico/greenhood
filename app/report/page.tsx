@@ -395,10 +395,10 @@ function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles
               <button
                 onClick={() => onRemove(i + 1)}
                 style={{
-                  position:"absolute", top:-8, right:-8,
+                  position:"absolute", top:5, right:5,
                   width:22, height:22, borderRadius:"50%",
-                  background:"var(--ink)", color:"var(--paper)",
-                  border:"2px solid var(--paper)",
+                  background:"rgba(45,42,36,0.85)", color:"white",
+                  border:"2px solid white",
                   display:"flex", alignItems:"center", justifyContent:"center",
                   cursor:"pointer", fontSize:11, padding:0, fontWeight:800,
                 }}
