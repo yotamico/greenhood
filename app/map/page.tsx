@@ -591,10 +591,10 @@ function MapPageInner() {
             }}
           >
             <svg width={13} height={13} viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/>
               <circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/>
-              <path d="M5 17V11h14V7"/>
+              <path d="M5 17V11h14V7" strokeWidth={1.6} strokeDasharray="3 2"/>
             </svg>
             מסלול פינוי
             {streetModeActive && (
