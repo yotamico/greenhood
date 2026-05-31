@@ -85,18 +85,22 @@ const HEBREW_DAY_NUM: Record<string,number> = {
   "ראשון":0,"שני":1,"שלישי":2,"רביעי":3,"חמישי":4,"שישי":5,
 };
 
-/* Fetch all named road ways in Nes Ziona bounding box once, build a name→segments map */
+/* Fetch all named road ways in Nes Ziona bounding box once, build a name→segments map.
+   Uses GET so no preflight / Content-Type issue. */
 function fetchNesZionaStreets(): Promise<Map<string,[number,number][][]>> {
   if (_streetCache) return Promise.resolve(_streetCache);
   if (_streetCachePromise) return _streetCachePromise;
 
-  _streetCachePromise = fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    headers: { "Content-Type": "text/plain" },
-    body: "[out:json][timeout:60];way[\"highway\"][\"name\"](31.895,34.775,31.960,34.870);out geom;",
-  })
-    .then(r => r.json())
-    .then((data: { elements: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] }) => {
+  const q = encodeURIComponent(
+    '[out:json][timeout:60];way["highway"]["name"](31.88,34.76,31.97,34.88);out geom;'
+  );
+
+  _streetCachePromise = fetch(`https://overpass-api.de/api/interpreter?data=${q}`)
+    .then(r => {
+      if (!r.ok) throw new Error(`Overpass ${r.status}`);
+      return r.json();
+    })
+    .then((data: { elements?: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] }) => {
       const map = new Map<string, [number,number][][]>();
       for (const el of data.elements ?? []) {
         const name = el.tags?.name;
@@ -109,8 +113,9 @@ function fetchNesZionaStreets(): Promise<Map<string,[number,number][][]>> {
       _streetCachePromise = null;
       return map;
     })
-    .catch(() => {
-      _streetCachePromise = null;
+    .catch(err => {
+      console.error("[clearance] Overpass fetch failed:", err);
+      _streetCachePromise = null;   // allow retry on next activation
       return new Map<string,[number,number][][]>();
     });
 
@@ -184,6 +189,8 @@ function MapPageInner() {
   const [scheduleData,     setScheduleData]     = useState<{street_name:string; clearance_day:string}[]>([]);
   const [clearanceStreets, setClearanceStreets] = useState<[number,number][][]>([]);
   const [streetLoading,    setStreetLoading]    = useState(false);
+  const [streetError,      setStreetError]      = useState(false);
+  const [streetCount,      setStreetCount]      = useState(0);
 
   /* navigation mode */
   const [navDest,  setNavDest]  = useState<NavDest | null>(null);
@@ -218,17 +225,21 @@ function MapPageInner() {
     if (!scheduledNames.size) { setClearanceStreets([]); return; }
 
     setStreetLoading(true);
+    setStreetError(false);
     fetchNesZionaStreets().then(streetMap => {
+      if (streetMap.size === 0) { setStreetError(true); setClearanceStreets([]); return; }
       const segs: [number,number][][] = [];
+      let matchedCount = 0;
       streetMap.forEach((ways, osmName) => {
-        /* match if the OSM name contains any scheduled name or vice-versa */
         const matched = [...scheduledNames].some(
-          sched => osmName.includes(sched) || sched.includes(osmName)
+          sched => osmName === sched || osmName.includes(sched) || sched.includes(osmName)
         );
-        if (matched) segs.push(...ways);
+        if (matched) { segs.push(...ways); matchedCount++; }
       });
       setClearanceStreets(segs);
-    }).finally(() => setStreetLoading(false));
+      setStreetCount(matchedCount);
+    }).catch(() => setStreetError(true))
+      .finally(() => setStreetLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streetModeActive, streetModeDay, scheduleData]);
 
@@ -589,12 +600,12 @@ function MapPageInner() {
             מסלול פינוי
             {streetModeActive && (
               <span style={{
-                background: streetLoading ? "var(--muted)" : "#C94B1F",
+                background: streetLoading ? "var(--muted)" : streetError ? "var(--accent)" : "#C94B1F",
                 color: "white", borderRadius: 999,
                 fontSize: 10, fontWeight: 800,
                 padding: "1px 6px", marginLeft: 2,
               }}>
-                {streetLoading ? "…" : "פעיל"}
+                {streetLoading ? "…" : streetError ? "שגיאה" : streetCount > 0 ? `${streetCount} רח'` : "פעיל"}
               </span>
             )}
           </button>
