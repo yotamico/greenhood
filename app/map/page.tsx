@@ -410,11 +410,8 @@ function MapPageInner() {
                   display: "flex", alignItems: "center", gap: 5,
                 }}
               >
-                <svg width={13} height={13} viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
-                  <path d="M3 12h18M3 6l9-3 9 3M3 18l9 3 9-3"/>
-                </svg>
-                מסלול פינוי
+                <span style={{ fontSize: 13 }}>🔥</span>
+                פינוי מחר
               </button>
 
               {/* remaining category chips */}
