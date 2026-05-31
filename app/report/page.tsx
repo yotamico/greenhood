@@ -32,6 +32,12 @@ export default function ReportPage() {
   const [photos,    setPhotos]    = useState<File[]>([]);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
 
+  /* AI suggestion state */
+  const [aiLoading,   setAiLoading]   = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState<{title:string; category:string} | null>(null);
+  const [aiDismissed, setAiDismissed] = useState(false);
+  const aiSuggestionIdRef = useRef<string | null>(null); // DB row id for feedback
+
   /* other form state */
   const [title,     setTitle]     = useState("");
   const [category,  setCategory]  = useState("furniture");
@@ -69,6 +75,38 @@ export default function ReportPage() {
     });
   }, [router]);
 
+  /* analyze primary photo with Claude Vision */
+  async function analyzePhoto(file: File) {
+    setAiLoading(true);
+    setAiSuggestion(null);
+    setAiDismissed(false);
+    try {
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res((reader.result as string).split(",")[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch("/api/analyze-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mediaType: file.type || "image/jpeg" }),
+      });
+      if (!r.ok) return;
+      const data = await r.json() as { title: string; category: string; confidence: number };
+      if (data.confidence >= 0.4) {
+        setAiSuggestion({ title: data.title, category: data.category });
+        /* save suggestion to DB for future learning */
+        const { data: row } = await supabase.from("ai_suggestions").insert([{
+          suggested_title: data.title,
+          suggested_category: data.category,
+        }]).select("id").single();
+        if (row) aiSuggestionIdRef.current = row.id;
+      }
+    } catch { /* best-effort */ }
+    finally { setAiLoading(false); }
+  }
+
   /* add a single photo (camera) — becomes primary if list is empty */
   function handleSinglePhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
@@ -77,6 +115,7 @@ export default function ReportPage() {
     setPhotos(prev => prev.length === 0 ? [f] : [f, ...prev.slice(1)]);
     setPhotoUrls(prev => prev.length === 0 ? [url] : [url, ...prev.slice(1)]);
     e.target.value = "";
+    analyzePhoto(f); // fire AI analysis immediately
   }
 
   /* add multiple photos from gallery (appended after existing) */
@@ -135,6 +174,17 @@ export default function ReportPage() {
           is_primary: i === 0,
         }]);
       }
+    }
+
+    /* record whether user accepted AI suggestion (for learning) */
+    if (aiSuggestionIdRef.current) {
+      const accepted = aiSuggestion !== null && !aiDismissed;
+      await supabase.from("ai_suggestions").update({
+        user_accepted:  accepted,
+        final_title:    title,
+        final_category: category,
+        item_id:        item.id,
+      }).eq("id", aiSuggestionIdRef.current);
     }
 
     /* grant XP */
@@ -222,14 +272,68 @@ export default function ReportPage() {
           />
         )}
         {step === 2 && (
-          <StepDetails
-            title={title} setTitle={setTitle}
-            category={category} setCategory={setCategory}
-            condition={condition} setCondition={setCondition}
-            tags={tags} toggleTag={toggleTag}
-            address={address} setAddress={setAddress}
-            lat={lat} lng={lng}
-          />
+          <>
+            {/* AI suggestion banner */}
+            {aiSuggestion && !aiDismissed && (
+              <div style={{
+                marginBottom:16, padding:"12px 14px",
+                background:"#EEF7EE", border:"2px solid #6B9956",
+                borderRadius:14, boxShadow:"var(--sh-sm)",
+                display:"flex", alignItems:"center", gap:10,
+              }}>
+                <span style={{ fontSize:22, flexShrink:0 }}>🤖</span>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:"#4A7A3A", marginBottom:4 }}>
+                    זיהינו אוטומטית:
+                  </div>
+                  <div style={{ fontSize:14, fontWeight:800, color:"var(--ink)" }}>
+                    {aiSuggestion.title}
+                  </div>
+                  <div style={{ fontSize:11, color:"var(--muted)", fontWeight:500 }}>
+                    קטגוריה: {CATS.find(c => c.id === aiSuggestion.category)?.label ?? aiSuggestion.category}
+                  </div>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:6, flexShrink:0 }}>
+                  <button
+                    onClick={() => { setTitle(aiSuggestion.title); setCategory(aiSuggestion.category); setAiDismissed(true); }}
+                    style={{
+                      padding:"5px 12px", borderRadius:999,
+                      background:"var(--primary)", border:"1.5px solid var(--ink)",
+                      fontFamily:"var(--font-sans)", fontWeight:700, fontSize:12,
+                      cursor:"pointer",
+                    }}
+                  >אשר ✓</button>
+                  <button
+                    onClick={() => setAiDismissed(true)}
+                    style={{
+                      padding:"5px 12px", borderRadius:999,
+                      background:"none", border:"1.5px solid var(--ink)",
+                      fontFamily:"var(--font-sans)", fontWeight:700, fontSize:12,
+                      cursor:"pointer", color:"var(--muted)",
+                    }}
+                  >שנה</button>
+                </div>
+              </div>
+            )}
+            {aiLoading && (
+              <div style={{
+                marginBottom:16, padding:"10px 14px",
+                background:"var(--paper-2)", border:"1.5px solid var(--ink)",
+                borderRadius:12, display:"flex", alignItems:"center", gap:8,
+                fontSize:13, fontWeight:600, color:"var(--muted)",
+              }}>
+                <span style={{ fontSize:18 }}>🔍</span> מנתח תמונה…
+              </div>
+            )}
+            <StepDetails
+              title={title} setTitle={setTitle}
+              category={category} setCategory={setCategory}
+              condition={condition} setCondition={setCondition}
+              tags={tags} toggleTag={toggleTag}
+              address={address} setAddress={setAddress}
+              lat={lat} lng={lng}
+            />
+          </>
         )}
         {step === 3 && (
           <StepReview
