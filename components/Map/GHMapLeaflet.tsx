@@ -51,12 +51,13 @@ interface Item { id: string; title: string; category: string; lat: number | null
 interface NavDest { lat: number; lng: number; title: string; }
 
 interface Props {
-  userPos:        [number,number] | null;
-  items:          Item[];
-  onItemClick?:   (id: string) => void;
-  navRoute?:      [number,number][] | null;
-  navDest?:       NavDest | null;
-  centerTrigger?: number;
+  userPos:          [number,number] | null;
+  items:            Item[];
+  onItemClick?:     (id: string) => void;
+  navRoute?:        [number,number][] | null;
+  navDest?:         NavDest | null;
+  centerTrigger?:   number;
+  clearanceRoute?:  [number,number][] | null;
 }
 
 /* Center on user — only fires when trigger increments (button click) */
@@ -86,7 +87,7 @@ function FitRoute({ route }: { route: [number,number][] }) {
 
 const NES_ZIONA: [number,number] = [31.9297, 34.8307];
 
-export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, navDest, centerTrigger = 0 }: Props) {
+export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, navDest, centerTrigger = 0, clearanceRoute }: Props) {
   const center = userPos ?? NES_ZIONA;
 
   /* ── user dot icon ── */
@@ -147,6 +148,14 @@ export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, na
           );
         })
       }
+
+      {/* Clearance route — dashed orange polyline */}
+      {clearanceRoute && clearanceRoute.length > 1 && (
+        <Polyline
+          positions={clearanceRoute}
+          pathOptions={{ color: "#C94B1F", weight: 4, opacity: 0.85, dashArray: "10 8" }}
+        />
+      )}
 
       {/* Navigation route */}
       {navRoute && navRoute.length > 1 && (

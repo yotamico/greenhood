@@ -42,6 +42,15 @@ interface Item {
   status: string;
   lat: number | null;
   lng: number | null;
+  pickup_day: string | null;
+}
+
+function dayLabel(dateStr: string): string {
+  const t  = new Date().toISOString().split("T")[0];
+  const tm = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+  if (dateStr === t)  return "היום";
+  if (dateStr === tm) return "מחר";
+  return ["א׳","ב׳","ג׳","ד׳","ה׳","ו׳","ש׳"][new Date(dateStr).getDay()];
 }
 
 /* ── Bottom-sheet snap points (% from top of screen) ── */
@@ -123,6 +132,10 @@ function MapPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* clearance route mode */
+  const [clearanceActive, setClearanceActive] = useState(false);
+  const [clearanceDay,    setClearanceDay]    = useState<string>("");
+
   /* navigation mode */
   const [navDest,  setNavDest]  = useState<NavDest | null>(null);
   const [navRoute, setNavRoute] = useState<[number,number][] | null>(null);
@@ -199,7 +212,7 @@ function MapPageInner() {
     if (!authed) return;
     supabase
       .from("items")
-      .select("id,title,category,condition,address,created_at,status,lat,lng")
+      .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day")
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(50)
@@ -235,6 +248,36 @@ function MapPageInner() {
     (!search || it.title.includes(search) || it.address.includes(search))
   );
 
+  const todayStr = new Date().toISOString().split("T")[0];
+  const clearanceDays = clearanceActive
+    ? [...new Set(
+        items
+          .filter(it => it.pickup_day && it.lat != null && it.lng != null && it.pickup_day >= todayStr)
+          .map(it => it.pickup_day!)
+      )].sort().slice(0, 4)
+    : [];
+
+  const clearanceRoute: [number,number][] = (clearanceActive && clearanceDay)
+    ? items
+        .filter(it => it.pickup_day === clearanceDay && it.lat != null && it.lng != null)
+        .map(it => [it.lat!, it.lng!])
+    : [];
+
+  function toggleClearance() {
+    if (clearanceActive) {
+      setClearanceActive(false);
+      setClearanceDay("");
+    } else {
+      const days = [...new Set(
+        items
+          .filter(it => it.pickup_day && it.lat != null && it.lng != null && it.pickup_day >= todayStr)
+          .map(it => it.pickup_day!)
+      )].sort();
+      setClearanceActive(true);
+      setClearanceDay(days[0] ?? "");
+    }
+  }
+
   if (!authed) return null;
 
   return (
@@ -253,6 +296,7 @@ function MapPageInner() {
           navRoute={navRoute}
           navDest={navDest}
           centerTrigger={centerTrigger}
+          clearanceRoute={clearanceRoute}
         />
       </div>
 
@@ -333,6 +377,28 @@ function MapPageInner() {
               >+</button>
             </div>
             <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
+              {/* clearance route toggle chip */}
+              <button
+                onClick={toggleClearance}
+                style={{
+                  padding: "7px 13px", height: 34, flexShrink: 0,
+                  background: clearanceActive ? "#C94B1F" : "var(--surface)",
+                  color: clearanceActive ? "white" : "var(--ink)",
+                  border: `1.5px solid ${clearanceActive ? "#C94B1F" : "var(--ink)"}`,
+                  borderRadius: 999,
+                  fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
+                  cursor: "pointer", whiteSpace: "nowrap",
+                  boxShadow: clearanceActive ? "2px 2px 0 rgba(201,75,31,0.35)" : "1px 1px 0 var(--shadow-ink)",
+                  display: "flex", alignItems: "center", gap: 5,
+                }}
+              >
+                <svg width={13} height={13} viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                  <path d="M3 12h18M3 6l9-3 9 3M3 18l9 3 9-3"/>
+                </svg>
+                מסלול פינוי
+              </button>
+
               {CATS.map(c => (
                 <button
                   key={c.key}
@@ -350,6 +416,36 @@ function MapPageInner() {
                 >{c.label}</button>
               ))}
             </div>
+
+            {/* day selector — visible only when clearance mode is active */}
+            {clearanceActive && (
+              <div style={{
+                display: "flex", gap: 6, marginTop: 8,
+                overflowX: "auto", scrollbarWidth: "none",
+              }}>
+                {clearanceDays.length === 0 ? (
+                  <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500, padding: "4px 0" }}>
+                    אין פריטי פינוי עם תאריך
+                  </span>
+                ) : (
+                  clearanceDays.map(d => (
+                    <button
+                      key={d}
+                      onClick={() => setClearanceDay(d)}
+                      style={{
+                        padding: "5px 14px", height: 30, flexShrink: 0,
+                        background: clearanceDay === d ? "#C94B1F" : "rgba(201,75,31,0.1)",
+                        color: clearanceDay === d ? "white" : "#C94B1F",
+                        border: `1.5px solid #C94B1F`,
+                        borderRadius: 999,
+                        fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
+                        cursor: "pointer", whiteSpace: "nowrap",
+                      }}
+                    >{dayLabel(d)}</button>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
