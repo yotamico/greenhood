@@ -262,14 +262,38 @@ export default function ReportPage() {
       {/* ── CONTENT ── */}
       <div style={{ flex:1, overflowY:"auto", padding:"20px 20px" }}>
         {step === 1 && (
-          <StepCamera
-            photoUrls={photoUrls}
-            cameraRef={cameraRef}
-            multiRef={multiRef}
-            onSingleFile={handleSinglePhoto}
-            onMultiFiles={handleMultiPhotos}
-            onRemove={handleRemovePhoto}
-          />
+          <>
+            <StepCamera
+              photoUrls={photoUrls}
+              cameraRef={cameraRef}
+              multiRef={multiRef}
+              onSingleFile={handleSinglePhoto}
+              onMultiFiles={handleMultiPhotos}
+              onRemove={handleRemovePhoto}
+            />
+            {aiLoading && (
+              <div style={{
+                marginTop:12, padding:"10px 14px",
+                background:"#EEF7EE", border:"1.5px solid #6B9956",
+                borderRadius:12, display:"flex", alignItems:"center", gap:8,
+                fontSize:13, fontWeight:600, color:"#4A7A3A",
+              }}>
+                <span style={{ fontSize:18 }}>🤖</span>
+                מנתח את התמונה…
+              </div>
+            )}
+            {aiSuggestion && !aiLoading && !aiDismissed && (
+              <div style={{
+                marginTop:12, padding:"10px 14px",
+                background:"#EEF7EE", border:"1.5px solid #6B9956",
+                borderRadius:12, display:"flex", alignItems:"center", gap:8,
+                fontSize:13, fontWeight:600, color:"#4A7A3A",
+              }}>
+                <span style={{ fontSize:18 }}>✅</span>
+                זיהינו: <strong>{aiSuggestion.title}</strong>
+              </div>
+            )}
+          </>
         )}
         {step === 2 && (
           <>
