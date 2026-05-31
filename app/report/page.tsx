@@ -23,14 +23,16 @@ type Step = 1 | 2 | 3;
 
 export default function ReportPage() {
   const router = useRouter();
-  const [step,      setStep]      = useState<Step>(1);
-  const [loading,   setLoading]   = useState(false);
-  const [authed,    setAuthed]    = useState(false);
-  const [userId,    setUserId]    = useState<string|null>(null);
+  const [step,      setStep]    = useState<Step>(1);
+  const [loading,   setLoading] = useState(false);
+  const [authed,    setAuthed]  = useState(false);
+  const [userId,    setUserId]  = useState<string|null>(null);
 
-  /* form state */
-  const [photo,     setPhoto]     = useState<File | null>(null);
-  const [photoUrl,  setPhotoUrl]  = useState<string|null>(null);
+  /* photo state — array, index 0 is primary */
+  const [photos,    setPhotos]    = useState<File[]>([]);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+
+  /* other form state */
   const [title,     setTitle]     = useState("");
   const [category,  setCategory]  = useState("furniture");
   const [condition, setCondition] = useState("שלם");
@@ -38,16 +40,18 @@ export default function ReportPage() {
   const [address,   setAddress]   = useState("");
   const [lat,       setLat]       = useState<number|null>(null);
   const [lng,       setLng]       = useState<number|null>(null);
-  const fileRef    = useRef<HTMLInputElement>(null); // gallery
-  const cameraRef  = useRef<HTMLInputElement>(null); // camera (auto-open)
 
-  /* auto-open camera when page is ready */
+  const cameraRef = useRef<HTMLInputElement>(null); // single capture, auto-opened
+  const multiRef  = useRef<HTMLInputElement>(null); // multi-file gallery picker
+
+  /* auto-open camera when entering step 1 with no photos */
   useEffect(() => {
-    if (authed && step === 1 && !photo) {
+    if (authed && step === 1 && photos.length === 0) {
       const t = setTimeout(() => cameraRef.current?.click(), 150);
       return () => clearTimeout(t);
     }
-  }, [authed, step, photo]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, step, photos.length]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -55,11 +59,9 @@ export default function ReportPage() {
       setAuthed(true);
       setUserId(session.user.id);
     });
-    /* auto-detect location */
     navigator.geolocation?.getCurrentPosition(pos => {
       setLat(pos.coords.latitude);
       setLng(pos.coords.longitude);
-      /* reverse-geocode via nominatim */
       fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`)
         .then(r => r.json())
         .then(d => setAddress(d.display_name?.split(",").slice(0,2).join(", ") ?? ""))
@@ -67,59 +69,72 @@ export default function ReportPage() {
     });
   }, [router]);
 
-  /* photo preview */
-  function handlePhoto(e: React.ChangeEvent<HTMLInputElement>) {
+  /* add a single photo (camera) — becomes primary if list is empty */
+  function handleSinglePhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
-    setPhoto(f);
-    setPhotoUrl(URL.createObjectURL(f));
+    const url = URL.createObjectURL(f);
+    setPhotos(prev => prev.length === 0 ? [f] : [f, ...prev.slice(1)]);
+    setPhotoUrls(prev => prev.length === 0 ? [url] : [url, ...prev.slice(1)]);
+    e.target.value = "";
+  }
+
+  /* add multiple photos from gallery (appended after existing) */
+  function handleMultiPhotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    const urls = files.map(f => URL.createObjectURL(f));
+    setPhotos(prev => [...prev, ...files]);
+    setPhotoUrls(prev => [...prev, ...urls]);
+    e.target.value = "";
+  }
+
+  function handleRemovePhoto(idx: number) {
+    setPhotoUrls(prev => {
+      URL.revokeObjectURL(prev[idx]);
+      return prev.filter((_, i) => i !== idx);
+    });
+    setPhotos(prev => prev.filter((_, i) => i !== idx));
   }
 
   function toggleTag(t: string) {
-    setTags(prev => prev.includes(t) ? prev.filter(x=>x!==t) : [...prev, t]);
+    setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   }
 
-  /* submit */
+  /* submit — upload all photos then insert item */
   async function handleSubmit() {
     if (!userId || !title || !address) return;
     setLoading(true);
 
-    let mainPhotoUrl: string | null = null;
-
-    /* upload photo if present */
-    if (photo) {
-      const ext  = photo.name.split(".").pop() ?? "jpg";
-      const path = `${crypto.randomUUID()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("report-photos")
-        .upload(path, photo, { upsert: true });
-      if (!upErr) {
-        const { data } = supabase.storage.from("report-photos").getPublicUrl(path);
-        mainPhotoUrl = data.publicUrl;
-      }
-    }
-
-    /* insert item */
+    /* insert item first to get its id */
     const { data: item, error } = await supabase.from("items").insert([{
       reporter_id: userId,
-      title,
-      category,
-      condition,
-      tags,
-      address,
+      title, category, condition, tags, address,
       location: lat && lng ? `POINT(${lng} ${lat})` : null,
-      lat:      lat ?? null,
-      lng:      lng ?? null,
+      lat: lat ?? null,
+      lng: lng ?? null,
       status: "active",
     }]).select().single();
 
     if (error || !item) { setLoading(false); alert("שגיאה בשמירה"); return; }
 
-    /* insert image row if we have a photo */
-    if (mainPhotoUrl) {
-      await supabase.from("item_images").insert([{
-        item_id: item.id, url: mainPhotoUrl, position: 0, is_primary: true,
-      }]);
+    /* upload all photos in order */
+    for (let i = 0; i < photos.length; i++) {
+      const f    = photos[i];
+      const ext  = f.name.split(".").pop() ?? "jpg";
+      const path = `${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("report-photos")
+        .upload(path, f, { upsert: true });
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from("report-photos").getPublicUrl(path);
+        await supabase.from("item_images").insert([{
+          item_id:    item.id,
+          url:        urlData.publicUrl,
+          position:   i,
+          is_primary: i === 0,
+        }]);
+      }
     }
 
     /* grant XP */
@@ -133,10 +148,14 @@ export default function ReportPage() {
 
   if (!authed) return null;
 
+  const hasPhotos   = photos.length > 0;
+  const step1Locked = step === 1 && !hasPhotos;
+  const step2Locked = step === 2 && (!title || !address);
+
   const ctaLabel =
     step === 1 ? "המשך לפרטים ←" :
     step === 2 ? "סקירה ופרסום ←" :
-    loading   ? "שומר…"          : "פרסם עכשיו ✓";
+    loading    ? "שומר…"          : "פרסם עכשיו ✓";
 
   return (
     <div style={{
@@ -170,7 +189,6 @@ export default function ReportPage() {
           }}>שמור טיוטה</button>
         </div>
 
-        {/* progress bar */}
         <div style={{ display:"flex", gap:6 }}>
           {[1,2,3].map(s => (
             <div key={s} style={{
@@ -195,11 +213,12 @@ export default function ReportPage() {
       <div style={{ flex:1, overflowY:"auto", padding:"20px 20px" }}>
         {step === 1 && (
           <StepCamera
-            photoUrl={photoUrl}
-            fileRef={fileRef}
+            photoUrls={photoUrls}
             cameraRef={cameraRef}
-            onFile={handlePhoto}
-            onClear={() => { setPhoto(null); setPhotoUrl(null); }}
+            multiRef={multiRef}
+            onSingleFile={handleSinglePhoto}
+            onMultiFiles={handleMultiPhotos}
+            onRemove={handleRemovePhoto}
           />
         )}
         {step === 2 && (
@@ -214,8 +233,10 @@ export default function ReportPage() {
         )}
         {step === 3 && (
           <StepReview
-            photoUrl={photoUrl} title={title}
-            category={CATS.find(c=>c.id===category)!}
+            primaryPhotoUrl={photoUrls[0] ?? null}
+            photoCount={photos.length}
+            title={title}
+            category={CATS.find(c => c.id === category)!}
             condition={condition} tags={tags} address={address}
           />
         )}
@@ -228,65 +249,104 @@ export default function ReportPage() {
         borderTop:"2px solid var(--ink)",
         flexShrink:0,
       }}>
-        <button
-          disabled={loading || (step===2 && (!title || !address))}
-          onClick={() => step < 3 ? setStep((step+1) as Step) : handleSubmit()}
-          style={{
-            width:"100%", height:56,
-            background: loading ? "var(--primary-tint)" : "var(--primary)",
-            color:"var(--ink)",
-            border:"2px solid var(--ink)", borderRadius:"var(--r-md)",
-            fontFamily:"var(--font-sans)", fontWeight:700, fontSize:17,
-            cursor: loading ? "not-allowed" : "pointer",
-            boxShadow:"var(--sh-md)",
-            opacity: (step===2 && (!title||!address)) ? 0.6 : 1,
-          }}
-        >{ctaLabel}</button>
+        <div style={{ display:"flex", gap:10, alignItems:"stretch" }}>
+          {/* Secondary "add photos" button — only on step 1 */}
+          {step === 1 && (
+            <button
+              onClick={() => multiRef.current?.click()}
+              style={{
+                flexShrink:0,
+                padding:"0 18px",
+                height:56,
+                background:"var(--surface)",
+                border:"2px solid var(--ink)",
+                borderRadius:"var(--r-md)",
+                fontFamily:"var(--font-sans)", fontWeight:700, fontSize:14,
+                cursor:"pointer",
+                boxShadow:"var(--sh-sm)",
+                display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+                color:"var(--ink)",
+              }}
+            >
+              <span style={{ fontSize:18, lineHeight:1 }}>+</span>
+              <span>הוסף</span>
+            </button>
+          )}
+
+          {/* Main CTA */}
+          <button
+            disabled={loading || step1Locked || step2Locked}
+            onClick={() => step < 3 ? setStep((step+1) as Step) : handleSubmit()}
+            style={{
+              flex:1, height:56,
+              background: (step1Locked || loading) ? "var(--primary-tint)" : "var(--primary)",
+              color:"var(--ink)",
+              border:"2px solid var(--ink)", borderRadius:"var(--r-md)",
+              fontFamily:"var(--font-sans)", fontWeight:700, fontSize:17,
+              cursor: (loading || step1Locked || step2Locked) ? "not-allowed" : "pointer",
+              boxShadow:"var(--sh-md)",
+              opacity: (step1Locked || step2Locked) ? 0.55 : 1,
+              transition:"opacity 200ms, background 200ms",
+            }}
+          >{ctaLabel}</button>
+        </div>
+
+        {/* Hint when button is locked on step 1 */}
+        {step1Locked && (
+          <div style={{
+            marginTop:8, textAlign:"center",
+            fontSize:12, color:"var(--muted)", fontWeight:500,
+          }}>יש להוסיף לפחות תמונה אחת כדי להמשיך</div>
+        )}
       </div>
     </div>
   );
 }
 
 /* ── Step 1: Camera ── */
-function StepCamera({ photoUrl, fileRef, cameraRef, onFile, onClear }: {
-  photoUrl:string|null;
-  fileRef:React.RefObject<HTMLInputElement | null>;
-  cameraRef:React.RefObject<HTMLInputElement | null>;
-  onFile:(e:React.ChangeEvent<HTMLInputElement>)=>void;
-  onClear:()=>void;
+function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles, onRemove }: {
+  photoUrls:     string[];
+  cameraRef:     React.RefObject<HTMLInputElement | null>;
+  multiRef:      React.RefObject<HTMLInputElement | null>;
+  onSingleFile:  (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onMultiFiles:  (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove:      (idx: number) => void;
 }) {
+  const primaryUrl = photoUrls[0] ?? null;
+  const extras     = photoUrls.slice(1);
+
   return (
     <div>
       <h2 style={{
         fontFamily:"var(--font-display)", fontWeight:900,
         fontSize:26, margin:"0 0 8px", lineHeight:1.1,
       }}>צלם/י את הפריט</h2>
-      <p style={{fontSize:14,color:"var(--muted)",fontWeight:500,margin:"0 0 20px"}}>
-        תמונה ברורה עוזרת למצוא את הפריט מהר יותר. לא חובה.
+      <p style={{ fontSize:14, color:"var(--muted)", fontWeight:500, margin:"0 0 20px" }}>
+        תמונה ברורה עוזרת למצוא את הפריט מהר יותר.
       </p>
 
-      {/* preview / upload area */}
+      {/* ── Primary photo area ── */}
       <div
-        onClick={() => !photoUrl && cameraRef.current?.click()}
+        onClick={() => !primaryUrl && cameraRef.current?.click()}
         style={{
           position:"relative",
           aspectRatio:"4/5",
-          background: photoUrl ? "transparent" : "var(--paper-2)",
+          background: primaryUrl ? "transparent" : "var(--paper-2)",
           borderRadius:16,
-          border:`2px ${photoUrl ? "solid" : "dashed"} var(--ink)`,
+          border:`2px ${primaryUrl ? "solid" : "dashed"} var(--ink)`,
           boxShadow:"var(--sh-lg)",
           overflow:"hidden",
           display:"flex", alignItems:"center", justifyContent:"center",
-          cursor: photoUrl ? "default" : "pointer",
-          marginBottom:14,
+          cursor: primaryUrl ? "default" : "pointer",
+          marginBottom: extras.length > 0 ? 10 : 14,
         }}
       >
-        {photoUrl ? (
+        {primaryUrl ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photoUrl} alt="תצוגה" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+            <img src={primaryUrl} alt="תצוגה" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
             <button
-              onClick={onClear}
+              onClick={e => { e.stopPropagation(); onRemove(0); }}
               style={{
                 position:"absolute", top:10, left:10,
                 width:36, height:36, borderRadius:"50%",
@@ -296,6 +356,13 @@ function StepCamera({ photoUrl, fileRef, cameraRef, onFile, onClear }: {
                 boxShadow:"var(--sh-sm)",
               }}
             >✕</button>
+            {/* primary badge */}
+            <div style={{
+              position:"absolute", bottom:10, right:10,
+              padding:"3px 10px", borderRadius:999,
+              background:"var(--ink)", color:"var(--paper)",
+              fontSize:11, fontWeight:700,
+            }}>ראשית</div>
           </>
         ) : (
           <div style={{ textAlign:"center", padding:40 }}>
@@ -308,40 +375,58 @@ function StepCamera({ photoUrl, fileRef, cameraRef, onFile, onClear }: {
         )}
       </div>
 
-      {/* Gallery picker — triggered by the button */}
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        onChange={onFile}
-        style={{ display:"none" }}
-      />
-      {/* Camera — auto-opened on page load */}
+      {/* ── Extra thumbnails strip ── */}
+      {extras.length > 0 && (
+        <div style={{
+          display:"flex", gap:8, overflowX:"auto",
+          marginBottom:14, paddingBottom:4,
+          scrollbarWidth:"none",
+        }}>
+          {extras.map((url, i) => (
+            <div key={i} style={{ position:"relative", flexShrink:0 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt=""
+                style={{
+                  width:72, height:72, objectFit:"cover",
+                  borderRadius:10, border:"2px solid var(--ink)",
+                  display:"block",
+                }}
+              />
+              <button
+                onClick={() => onRemove(i + 1)}
+                style={{
+                  position:"absolute", top:-7, left:-7,
+                  width:22, height:22, borderRadius:"50%",
+                  background:"var(--ink)", color:"var(--paper)",
+                  border:"1.5px solid var(--paper)",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  cursor:"pointer", fontSize:11, padding:0, fontWeight:700,
+                }}
+              >✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Hidden inputs */}
       <input
         ref={cameraRef}
         type="file"
         accept="image/*"
         capture="environment"
-        onChange={onFile}
+        onChange={onSingleFile}
         style={{ display:"none" }}
       />
-
-      {!photoUrl && (
-        <button
-          onClick={() => fileRef.current?.click()}
-          style={{
-            width:"100%", height:48,
-            background:"var(--surface)",
-            border:"2px solid var(--ink)", borderRadius:"var(--r-md)",
-            boxShadow:"var(--sh-md)",
-            fontFamily:"var(--font-sans)", fontWeight:700, fontSize:14,
-            cursor:"pointer",
-            display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-          }}
-        >
-          <span style={{fontSize:18}}>📷</span> בחר/י תמונה
-        </button>
-      )}
+      <input
+        ref={multiRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={onMultiFiles}
+        style={{ display:"none" }}
+      />
     </div>
   );
 }
@@ -362,11 +447,10 @@ function StepDetails({ title, setTitle, category, setCategory, condition,
         fontFamily:"var(--font-display)", fontWeight:900,
         fontSize:26, margin:"0 0 8px", lineHeight:1.1,
       }}>פרטי הפריט</h2>
-      <p style={{fontSize:14,color:"var(--muted)",fontWeight:500,margin:"0 0 20px"}}>
+      <p style={{ fontSize:14, color:"var(--muted)", fontWeight:500, margin:"0 0 20px" }}>
         מלא/י את הפרטים — כמה שיותר, כך יותר קל למצוא.
       </p>
 
-      {/* Title */}
       <label style={{ display:"block", marginBottom:20 }}>
         <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:8 }}>שם הפריט *</div>
         <input
@@ -378,12 +462,9 @@ function StepDetails({ title, setTitle, category, setCategory, condition,
         />
       </label>
 
-      {/* Category */}
       <div style={{ marginBottom:20 }}>
         <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:10 }}>קטגוריה</div>
-        <div style={{
-          display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8,
-        }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
           {CATS.map(c => (
             <button key={c.id} onClick={() => setCategory(c.id)} style={{
               padding:"10px 4px",
@@ -396,21 +477,16 @@ function StepDetails({ title, setTitle, category, setCategory, condition,
               fontFamily:"var(--font-sans)",
               transition:"all 120ms",
             }}>
-              <span style={{fontSize:20}}>{c.emoji}</span>
-              <span style={{fontSize:10,fontWeight:700}}>{c.label}</span>
+              <span style={{ fontSize:20 }}>{c.emoji}</span>
+              <span style={{ fontSize:10, fontWeight:700 }}>{c.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Condition */}
       <div style={{ marginBottom:20 }}>
         <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:10 }}>מצב</div>
-        <div style={{
-          display:"flex", gap:6, overflowX:"auto",
-          marginInline:-20, paddingInline:20,
-          scrollbarWidth:"none",
-        }}>
+        <div style={{ display:"flex", gap:6, overflowX:"auto", marginInline:-20, paddingInline:20, scrollbarWidth:"none" }}>
           {CONDITIONS.map(c => (
             <button key={c} onClick={() => setCondition(c)} style={{
               padding:"7px 14px", height:34, flexShrink:0,
@@ -425,14 +501,9 @@ function StepDetails({ title, setTitle, category, setCategory, condition,
         </div>
       </div>
 
-      {/* Tags */}
       <div style={{ marginBottom:20 }}>
         <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:10 }}>תגיות (לא חובה)</div>
-        <div style={{
-          display:"flex", gap:6, overflowX:"auto",
-          marginInline:-20, paddingInline:20,
-          scrollbarWidth:"none",
-        }}>
+        <div style={{ display:"flex", gap:6, overflowX:"auto", marginInline:-20, paddingInline:20, scrollbarWidth:"none" }}>
           {TAGS.map(t => (
             <button key={t} onClick={() => toggleTag(t)} style={{
               padding:"7px 14px", height:34, flexShrink:0,
@@ -447,7 +518,6 @@ function StepDetails({ title, setTitle, category, setCategory, condition,
         </div>
       </div>
 
-      {/* Location */}
       <div style={{ marginBottom:8 }}>
         <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:8 }}>כתובת *</div>
         <div style={{
@@ -456,20 +526,20 @@ function StepDetails({ title, setTitle, category, setCategory, condition,
           padding:12,
           display:"flex", alignItems:"center", gap:10,
         }}>
-          <span style={{fontSize:18}}>📍</span>
-          <div style={{flex:1}}>
+          <span style={{ fontSize:18 }}>📍</span>
+          <div style={{ flex:1 }}>
             {lat && lng ? (
-              <div style={{fontSize:13,fontWeight:700,color:"var(--ink)"}}>{address || "מיקום זוהה"}</div>
+              <div style={{ fontSize:13, fontWeight:700, color:"var(--ink)" }}>{address || "מיקום זוהה"}</div>
             ) : (
               <input
                 className="gh-input"
-                style={{boxShadow:"none",border:"none",padding:"0",height:32}}
+                style={{ boxShadow:"none", border:"none", padding:"0", height:32 }}
                 value={address}
                 onChange={e => setAddress(e.target.value)}
                 placeholder="הכנס/י כתובת ידנית…"
               />
             )}
-            <div style={{fontSize:11,color:"var(--muted)",fontWeight:500,marginTop:2}}>
+            <div style={{ fontSize:11, color:"var(--muted)", fontWeight:500, marginTop:2 }}>
               {lat && lng ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "לא זוהה GPS"}
             </div>
           </div>
@@ -480,13 +550,14 @@ function StepDetails({ title, setTitle, category, setCategory, condition,
 }
 
 /* ── Step 3: Review ── */
-function StepReview({ photoUrl, title, category, condition, tags, address }: {
-  photoUrl:string|null;
-  title:string;
-  category:{ id:string; label:string; emoji:string };
-  condition:string;
-  tags:string[];
-  address:string;
+function StepReview({ primaryPhotoUrl, photoCount, title, category, condition, tags, address }: {
+  primaryPhotoUrl: string|null;
+  photoCount:      number;
+  title:           string;
+  category:        { id:string; label:string; emoji:string };
+  condition:       string;
+  tags:            string[];
+  address:         string;
 }) {
   return (
     <div>
@@ -494,40 +565,40 @@ function StepReview({ photoUrl, title, category, condition, tags, address }: {
         fontFamily:"var(--font-display)", fontWeight:900,
         fontSize:26, margin:"0 0 8px", lineHeight:1.1,
       }}>הכל נראה טוב?</h2>
-      <p style={{fontSize:14,color:"var(--muted)",fontWeight:500,margin:"0 0 20px"}}>
+      <p style={{ fontSize:14, color:"var(--muted)", fontWeight:500, margin:"0 0 20px" }}>
         זו התצוגה שיראו שאר המשתמשים.
       </p>
 
-      {/* preview card */}
       <div style={{
         background:"var(--surface)",
         border:"2px solid var(--ink)", borderRadius:16,
         boxShadow:"var(--sh-lg)",
         overflow:"hidden", marginBottom:16,
       }}>
-        {/* image */}
         <div style={{
           height:180,
-          background: photoUrl ? "transparent" : "var(--warning-tint)",
+          background: primaryPhotoUrl ? "transparent" : "var(--warning-tint)",
           borderBottom:"2px solid var(--ink)",
           display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:80, position:"relative",
-          overflow:"hidden",
+          fontSize:80, position:"relative", overflow:"hidden",
         }}>
-          {photoUrl
+          {primaryPhotoUrl
             // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={photoUrl} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            ? <img src={primaryPhotoUrl} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
             : category.emoji
           }
+          {photoCount > 1 && (
+            <div style={{
+              position:"absolute", bottom:10, right:10,
+              padding:"3px 10px", borderRadius:999,
+              background:"rgba(45,42,36,0.75)", color:"var(--paper)",
+              fontSize:12, fontWeight:700,
+            }}>+{photoCount - 1} תמונות</div>
+          )}
         </div>
-        <div style={{padding:14}}>
-          <div style={{
-            fontFamily:"var(--font-display)", fontWeight:900,
-            fontSize:18, marginBottom:4,
-          }}>{title}</div>
-          <div style={{fontSize:12,color:"var(--muted)",fontWeight:500,marginBottom:8}}>
-            📍 {address}
-          </div>
+        <div style={{ padding:14 }}>
+          <div style={{ fontFamily:"var(--font-display)", fontWeight:900, fontSize:18, marginBottom:4 }}>{title}</div>
+          <div style={{ fontSize:12, color:"var(--muted)", fontWeight:500, marginBottom:8 }}>📍 {address}</div>
           <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
             {[category.label, condition, ...tags].map(t => (
               <span key={t} style={{
@@ -540,7 +611,6 @@ function StepReview({ photoUrl, title, category, condition, tags, address }: {
         </div>
       </div>
 
-      {/* XP badge */}
       <div style={{
         padding:14,
         background:"var(--primary-tint)", borderRadius:14,
@@ -553,10 +623,10 @@ function StepReview({ photoUrl, title, category, condition, tags, address }: {
           display:"flex", alignItems:"center", justifyContent:"center",
           fontSize:20, flexShrink:0,
         }}>♻️</div>
-        <div style={{flex:1}}>
-          <div style={{fontSize:13,fontWeight:800,color:"var(--primary-dark)"}}>+50 XP על הפרסום</div>
-          <div style={{fontSize:12,fontWeight:500,color:"var(--ink-soft)"}}>
-            ותציל בערך 8 ק"ג מהטמנה 🌱
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:13, fontWeight:800, color:"var(--primary-dark)" }}>+50 XP על הפרסום</div>
+          <div style={{ fontSize:12, fontWeight:500, color:"var(--ink-soft)" }}>
+            ותציל בערך 8 ק&quot;ג מהטמנה 🌱
           </div>
         </div>
       </div>
