@@ -28,6 +28,7 @@ const FILTERS = [
 interface Item {
   id:string; title:string; category:string; condition:string;
   address:string; created_at:string; pickup_day:string|null;
+  item_images: { url:string; is_primary:boolean }[];
 }
 
 export default function FeedPage() {
@@ -48,7 +49,7 @@ export default function FeedPage() {
   useEffect(() => {
     if (!authed) return;
     supabase.from("items")
-      .select("id,title,category,condition,address,created_at,pickup_day")
+      .select("id,title,category,condition,address,created_at,pickup_day,item_images(url,is_primary)")
       .eq("status","active")
       .order("created_at",{ascending:false})
       .limit(60)
@@ -173,9 +174,12 @@ function MasonryCard({ item, saved, onSave, onPress, today, tomorrow }:{
   item:Item; saved:boolean; onSave:(id:string)=>void; onPress:()=>void;
   today:string; tomorrow:string;
 }) {
-  const emoji  = CAT_EMOJI[item.category] ?? "📦";
-  const color  = CAT_COLOR[item.category] ?? "var(--paper-2)";
-  const urgent = item.pickup_day === today || item.pickup_day === tomorrow;
+  const emoji    = CAT_EMOJI[item.category] ?? "📦";
+  const color    = CAT_COLOR[item.category] ?? "var(--paper-2)";
+  const urgent   = item.pickup_day === today || item.pickup_day === tomorrow;
+  const photoUrl = item.item_images?.find(img => img.is_primary)?.url
+                ?? item.item_images?.[0]?.url
+                ?? null;
   /* vary card image height based on title length for natural masonry */
   const h = 120 + (item.title.length % 4) * 20;
 
@@ -188,12 +192,15 @@ function MasonryCard({ item, saved, onSave, onPress, today, tomorrow }:{
     }}>
       {/* image area */}
       <div style={{
-        height:h, background:color,
+        height:h, background: photoUrl ? "var(--paper-2)" : color,
         borderBottom:"2px solid var(--ink)",
         display:"flex", alignItems:"center", justifyContent:"center",
-        fontSize:h*0.38, position:"relative",
+        fontSize:h*0.38, position:"relative", overflow:"hidden",
       }}>
-        {emoji}
+        {photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photoUrl} alt={item.title} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
+        ) : emoji}
         {urgent && (
           <div style={{
             position:"absolute", top:8, right:8,
