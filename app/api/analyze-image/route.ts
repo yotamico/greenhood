@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     if (!imageBase64) return NextResponse.json({ error: "missing image" }, { status: 400 });
 
     const msg = await client.messages.create({
-      model: "claude-haiku-4-5",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 256,
       messages: [{
         role: "user",
