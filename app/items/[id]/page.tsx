@@ -49,7 +49,8 @@ export default function ItemDetailPage() {
   const [marking,    setMarking]    = useState(false);
   const [loading,    setLoading]    = useState(true);
   const [navigating, setNavigating] = useState(false);
-  const [activeImg,  setActiveImg]  = useState<Image | null>(null);
+  const [activeImg,    setActiveImg]    = useState<Image | null>(null);
+  const [clearanceDay, setClearanceDay] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -78,6 +79,31 @@ export default function ItemDetailPage() {
       const { data: sv } = await supabase.from("saved_items")
         .select("item_id").eq("user_id", session.user.id).eq("item_id", id).maybeSingle();
       setSaved(!!sv);
+
+      // Resolve clearance day from street schedule
+      const { data: schedule } = await supabase
+        .from("clearance_schedule").select("street_name,clearance_day");
+      if (schedule?.length && it) {
+        const norm = (s: string) => s.replace(/['"״"""]/g, "").trim();
+        /* prefer Hebrew reverse-geocode if coordinates exist */
+        let heStreet: string | null = null;
+        if (it.lat && it.lng) {
+          try {
+            const rg = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${it.lat}&lon=${it.lng}&format=json&accept-language=he`
+            );
+            const geo = await rg.json();
+            heStreet = geo.address?.road ?? null;
+          } catch { /* ignore */ }
+        }
+        const haystack = norm(heStreet ?? it.address);
+        const match = schedule.find(s =>
+          haystack.includes(norm(s.street_name)) ||
+          norm(s.street_name).includes(haystack.split(",")[0])
+        );
+        if (match) setClearanceDay(match.clearance_day);
+      }
+
       setLoading(false);
     }
     load();
@@ -361,6 +387,13 @@ export default function ItemDetailPage() {
               <div style={{ fontSize:12, color:"var(--muted)", fontWeight:500, marginTop:2 }}>
                 פינוי: {item.pickup_day === today ? "היום 🔥" :
                         item.pickup_day === tomorrow ? "מחר" : item.pickup_day}
+              </div>
+            )}
+            {clearanceDay && (
+              <div style={{ fontSize:12, color:"var(--ink)", fontWeight:600, marginTop:4,
+                display:"flex", alignItems:"center", gap:4 }}>
+                <span>🚛</span>
+                <span>יום פינוי עירוני: <strong>{clearanceDay}</strong></span>
               </div>
             )}
           </div>
