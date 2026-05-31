@@ -377,7 +377,24 @@ function MapPageInner() {
               >+</button>
             </div>
             <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
-              {/* clearance route toggle chip */}
+              {CATS.map(c => (
+                <button
+                  key={c.key}
+                  onClick={() => setCat(c.key)}
+                  style={{
+                    padding: "7px 14px", height: 34,
+                    background: cat === c.key ? "var(--ink)" : "var(--surface)",
+                    color: cat === c.key ? "var(--paper)" : "var(--ink)",
+                    border: "1.5px solid var(--ink)", borderRadius: 999,
+                    fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
+                    cursor: "pointer", flexShrink: 0,
+                    boxShadow: cat === c.key ? "2px 2px 0 var(--shadow-ink)" : "1px 1px 0 var(--shadow-ink)",
+                    whiteSpace: "nowrap",
+                  }}
+                >{c.label}</button>
+              ))}
+
+              {/* clearance route toggle chip — at the end so הכל is rightmost */}
               <button
                 onClick={toggleClearance}
                 style={{
@@ -398,23 +415,6 @@ function MapPageInner() {
                 </svg>
                 מסלול פינוי
               </button>
-
-              {CATS.map(c => (
-                <button
-                  key={c.key}
-                  onClick={() => setCat(c.key)}
-                  style={{
-                    padding: "7px 14px", height: 34,
-                    background: cat === c.key ? "var(--ink)" : "var(--surface)",
-                    color: cat === c.key ? "var(--paper)" : "var(--ink)",
-                    border: "1.5px solid var(--ink)", borderRadius: 999,
-                    fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
-                    cursor: "pointer", flexShrink: 0,
-                    boxShadow: cat === c.key ? "2px 2px 0 var(--shadow-ink)" : "1px 1px 0 var(--shadow-ink)",
-                    whiteSpace: "nowrap",
-                  }}
-                >{c.label}</button>
-              ))}
             </div>
 
             {/* day selector — visible only when clearance mode is active */}
