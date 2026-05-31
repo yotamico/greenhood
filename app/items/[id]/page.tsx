@@ -49,6 +49,7 @@ export default function ItemDetailPage() {
   const [marking,    setMarking]    = useState(false);
   const [loading,    setLoading]    = useState(true);
   const [navigating, setNavigating] = useState(false);
+  const [activeImg,  setActiveImg]  = useState<Image | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -64,7 +65,9 @@ export default function ItemDetailPage() {
 
       if (!it) { router.replace("/map"); return; }
       setItem(it as Item);
-      setImages((imgs ?? []) as Image[]);
+      const imgList = (imgs ?? []) as Image[];
+      setImages(imgList);
+      setActiveImg(imgList.find(i => i.is_primary) ?? imgList[0] ?? null);
 
       // Load reporter profile
       const { data: rep } = await supabase.from("profiles")
@@ -154,7 +157,7 @@ export default function ItemDetailPage() {
   const urgent   = item.pickup_day === today || item.pickup_day === tomorrow;
   const taken    = item.status === "taken";
 
-  const primaryImg = images.find(i => i.is_primary) ?? images[0];
+  const primaryImg = activeImg ?? images.find(i => i.is_primary) ?? images[0];
   const initials   = (reporter?.name || "?").charAt(0).toUpperCase();
 
   return (
@@ -268,12 +271,20 @@ export default function ItemDetailPage() {
           borderBottom:"1.5px solid var(--border)",
         }}>
           {images.map((img, i) => (
-            <div key={i} style={{
-              width:60, height:60, flexShrink:0, borderRadius:10,
-              border:`2px solid ${img.is_primary ? "var(--primary)" : "var(--ink)"}`,
-              background:`url(${img.url}) center/cover no-repeat`,
-              boxShadow:"1.5px 1.5px 0 var(--shadow-ink)",
-            }}/>
+            <div
+              key={i}
+              onClick={() => setActiveImg(img)}
+              style={{
+                width:60, height:60, flexShrink:0, borderRadius:10,
+                border:`2px solid ${activeImg?.url === img.url ? "var(--primary)" : "var(--ink)"}`,
+                background:`url(${img.url}) center/cover no-repeat`,
+                boxShadow:"1.5px 1.5px 0 var(--shadow-ink)",
+                cursor:"pointer",
+                outline: activeImg?.url === img.url ? "2px solid var(--primary)" : "none",
+                outlineOffset:2,
+                transition:"outline 120ms, border-color 120ms",
+              }}
+            />
           ))}
         </div>
       )}
