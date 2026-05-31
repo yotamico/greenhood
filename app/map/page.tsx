@@ -132,9 +132,17 @@ function MapPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* clearance route mode */
+  /* clearance route mode (chip-based, uses pickup_day) */
   const [clearanceActive, setClearanceActive] = useState(false);
   const [clearanceDay,    setClearanceDay]    = useState<string>("");
+
+  /* street clearance mode — floating button */
+  const [streetModeActive,  setStreetModeActive]  = useState(false);
+  const [streetModeDay,     setStreetModeDay]     = useState<"היום"|"מחר"|"מחרתיים">("מחר");
+  const [scheduleData,      setScheduleData]      = useState<{street_name:string; clearance_day:string}[]>([]);
+  const [clearanceStreets,  setClearanceStreets]  = useState<[number,number][][]>([]);
+  const [streetLoading,     setStreetLoading]     = useState(false);
+  const overpassCacheRef = useRef<Record<string,[number,number][][]>>({});
 
   /* navigation mode */
   const [navDest,  setNavDest]  = useState<NavDest | null>(null);
@@ -143,6 +151,54 @@ function MapPageInner() {
   /* dedup ref — tracks which destination we already fetched a route for */
   const routeDestRef = useRef<string | null>(null);
   navDestRef.current = navDest;
+
+  /* fetch clearance schedule once */
+  useEffect(() => {
+    supabase.from("clearance_schedule").select("street_name,clearance_day")
+      .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;clearance_day:string}[]));
+  }, []);
+
+  /* fetch Overpass street geometries when mode/day changes */
+  useEffect(() => {
+    if (!streetModeActive || !scheduleData.length) {
+      setClearanceStreets([]);
+      return;
+    }
+    const HEBREW_DAY: Record<string,number> = {
+      "ראשון":0,"שני":1,"שלישי":2,"רביעי":3,"חמישי":4,"שישי":5,
+    };
+    const offset = streetModeDay === "מחר" ? 1 : streetModeDay === "מחרתיים" ? 2 : 0;
+    const d = new Date(); d.setDate(d.getDate() + offset);
+    const jsDay = d.getDay();
+    const streets = scheduleData
+      .filter(s => HEBREW_DAY[s.clearance_day] === jsDay)
+      .map(s => s.street_name);
+    if (!streets.length) { setClearanceStreets([]); return; }
+
+    const cacheKey = `${jsDay}`;
+    if (overpassCacheRef.current[cacheKey]) {
+      setClearanceStreets(overpassCacheRef.current[cacheKey]);
+      return;
+    }
+
+    setStreetLoading(true);
+    const namePattern = streets.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const query = `[out:json][timeout:30];area["name"="נס ציונה"]["boundary"="administrative"]->.a;way["name"~"^(${namePattern})$"]["highway"](area.a);out geom;`;
+    fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query })
+      .then(r => r.json())
+      .then(data => {
+        const segs: [number,number][][] = (data.elements || [])
+          .filter((e: {geometry?:unknown[]}) => e.geometry)
+          .map((e: {geometry:{lat:number;lon:number}[]}) =>
+            e.geometry.map(({ lat, lon }) => [lat, lon] as [number,number])
+          );
+        overpassCacheRef.current[cacheKey] = segs;
+        setClearanceStreets(segs);
+      })
+      .catch(() => setClearanceStreets([]))
+      .finally(() => setStreetLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streetModeActive, streetModeDay, scheduleData]);
 
   /* auth guard */
   useEffect(() => {
@@ -297,6 +353,7 @@ function MapPageInner() {
           navDest={navDest}
           centerTrigger={centerTrigger}
           clearanceRoute={clearanceRoute}
+          clearanceStreets={clearanceStreets}
         />
       </div>
 
@@ -465,6 +522,75 @@ function MapPageInner() {
           </div>
         )}
       </div>
+
+      {/* ── Floating street-clearance button ── */}
+      {!navDest && (
+        <div style={{
+          position: "fixed",
+          top: 118,
+          left: 12,
+          zIndex: 15,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}>
+          {/* main toggle pill */}
+          <button
+            onClick={() => setStreetModeActive(a => !a)}
+            style={{
+              padding: "7px 12px",
+              background: streetModeActive ? "var(--ink)" : "rgba(245,242,232,0.95)",
+              color: streetModeActive ? "var(--paper)" : "var(--ink)",
+              border: "1.5px solid var(--ink)",
+              borderRadius: 999,
+              fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
+              cursor: "pointer",
+              boxShadow: "var(--sh-md)",
+              display: "flex", alignItems: "center", gap: 5,
+              whiteSpace: "nowrap",
+            }}
+          >
+            <svg width={12} height={12} viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+              <path d="M3 12h18M3 6h18M3 18h18"/>
+            </svg>
+            מסלול פינוי
+            {streetModeActive && (
+              <span style={{
+                background: streetLoading ? "var(--muted)" : "#C94B1F",
+                color: "white", borderRadius: 999,
+                fontSize: 10, fontWeight: 800,
+                padding: "1px 6px", marginLeft: 2,
+              }}>
+                {streetLoading ? "…" : "פעיל"}
+              </span>
+            )}
+          </button>
+
+          {/* day selector — appears to the right when active */}
+          {streetModeActive && (
+            <>
+              {(["היום","מחר","מחרתיים"] as const).map(day => (
+                <button
+                  key={day}
+                  onClick={() => setStreetModeDay(day)}
+                  style={{
+                    padding: "6px 11px",
+                    background: streetModeDay === day ? "#C94B1F" : "rgba(245,242,232,0.95)",
+                    color: streetModeDay === day ? "white" : "var(--ink)",
+                    border: `1.5px solid ${streetModeDay === day ? "#C94B1F" : "var(--ink)"}`,
+                    borderRadius: 999,
+                    fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
+                    cursor: "pointer",
+                    boxShadow: "var(--sh-sm)",
+                    whiteSpace: "nowrap",
+                  }}
+                >{day}</button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── "רשימה" pill — centered above tab bar ── */}
       <button
