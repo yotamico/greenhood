@@ -31,6 +31,8 @@ interface Item {
   item_images: { url:string; is_primary:boolean }[];
 }
 
+const HEBREW_DAYS = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+
 export default function FeedPage() {
   const router  = useRouter();
   const [items, setItems]   = useState<Item[]>([]);
@@ -38,6 +40,7 @@ export default function FeedPage() {
   const [saved, setSaved]   = useState<Set<string>>(new Set());
   const [search,setSearch]  = useState("");
   const [authed,setAuthed]  = useState(false);
+  const [scheduleData, setScheduleData] = useState<{street_name:string; clearance_day:string}[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data:{session}}) => {
@@ -45,6 +48,11 @@ export default function FeedPage() {
       setAuthed(true);
     });
   }, [router]);
+
+  useEffect(() => {
+    supabase.from("clearance_schedule").select("street_name,clearance_day")
+      .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;clearance_day:string}[]));
+  }, []);
 
   useEffect(() => {
     if (!authed) return;
@@ -58,6 +66,11 @@ export default function FeedPage() {
 
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
+
+  const tomorrowHebrewDay = HEBREW_DAYS[(new Date().getDay() + 1) % 7];
+  const tomorrowStreets = new Set(
+    scheduleData.filter(s => s.clearance_day === tomorrowHebrewDay).map(s => s.street_name)
+  );
 
   const displayed = items.filter(it => {
     if (filter === "urgent") return it.pickup_day === today || it.pickup_day === tomorrow;
@@ -153,13 +166,13 @@ export default function FeedPage() {
           {/* column 1 */}
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {col1.map(it => (
-              <MasonryCard key={it.id} item={it} saved={saved.has(it.id)} onSave={toggleSave} onPress={() => router.push(`/items/${it.id}`)} today={today} tomorrow={tomorrow}/>
+              <MasonryCard key={it.id} item={it} saved={saved.has(it.id)} onSave={toggleSave} onPress={() => router.push(`/items/${it.id}`)} today={today} tomorrow={tomorrow} tomorrowStreets={tomorrowStreets}/>
             ))}
           </div>
           {/* column 2 */}
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {col2.map(it => (
-              <MasonryCard key={it.id} item={it} saved={saved.has(it.id)} onSave={toggleSave} onPress={() => router.push(`/items/${it.id}`)} today={today} tomorrow={tomorrow}/>
+              <MasonryCard key={it.id} item={it} saved={saved.has(it.id)} onSave={toggleSave} onPress={() => router.push(`/items/${it.id}`)} today={today} tomorrow={tomorrow} tomorrowStreets={tomorrowStreets}/>
             ))}
           </div>
         </div>
@@ -170,13 +183,16 @@ export default function FeedPage() {
   );
 }
 
-function MasonryCard({ item, saved, onSave, onPress, today, tomorrow }:{
+function MasonryCard({ item, saved, onSave, onPress, today, tomorrow, tomorrowStreets }:{
   item:Item; saved:boolean; onSave:(id:string)=>void; onPress:()=>void;
-  today:string; tomorrow:string;
+  today:string; tomorrow:string; tomorrowStreets:Set<string>;
 }) {
   const emoji    = CAT_EMOJI[item.category] ?? "📦";
   const color    = CAT_COLOR[item.category] ?? "var(--paper-2)";
   const urgent   = item.pickup_day === today || item.pickup_day === tomorrow;
+  const norm     = (s:string) => s.replace(/['"״"]/g,"");
+  const clearanceTomorrow = tomorrowStreets.size > 0 &&
+    [...tomorrowStreets].some(st => norm(item.address).includes(norm(st)));
   const photoUrl = item.item_images?.find(img => img.is_primary)?.url
                 ?? item.item_images?.[0]?.url
                 ?? null;
@@ -201,14 +217,14 @@ function MasonryCard({ item, saved, onSave, onPress, today, tomorrow }:{
           // eslint-disable-next-line @next/next/no-img-element
           <img src={photoUrl} alt={item.title} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
         ) : emoji}
-        {urgent && (
+        {(clearanceTomorrow || urgent) && (
           <div style={{
             position:"absolute", top:8, right:8,
             padding:"2px 8px", borderRadius:999,
             background:"var(--accent)", color:"white",
             border:"1.5px solid var(--ink)",
             fontSize:10, fontWeight:800,
-          }}>🔥 מהר!</div>
+          }}>🔥 {clearanceTomorrow ? "מחר" : "מהר!"}</div>
         )}
         <button
           onClick={e => { e.stopPropagation(); onSave(item.id); }}
