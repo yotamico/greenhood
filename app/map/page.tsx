@@ -91,13 +91,10 @@ function fetchNesZionaStreets(): Promise<Map<string,[number,number][][]>> {
   if (_streetCache) return Promise.resolve(_streetCache);
   if (_streetCachePromise) return _streetCachePromise;
 
-  const q = encodeURIComponent(
-    '[out:json][timeout:60];way["highway"]["name"](31.88,34.76,31.97,34.88);out geom;'
-  );
-
-  _streetCachePromise = fetch(`https://overpass-api.de/api/interpreter?data=${q}`)
+  /* /api/streets is a Next.js proxy that calls Overpass server-side — no CORS issues */
+  _streetCachePromise = fetch("/api/streets")
     .then(r => {
-      if (!r.ok) throw new Error(`Overpass ${r.status}`);
+      if (!r.ok) throw new Error(`/api/streets ${r.status}`);
       return r.json();
     })
     .then((data: { elements?: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] }) => {
