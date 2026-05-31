@@ -590,9 +590,11 @@ function MapPageInner() {
               whiteSpace: "nowrap",
             }}
           >
-            <svg width={12} height={12} viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
-              <path d="M3 12h18M3 6h18M3 18h18"/>
+            <svg width={13} height={13} viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/>
+              <circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/>
+              <path d="M5 17V11h14V7"/>
             </svg>
             מסלול פינוי
             {streetModeActive && (
