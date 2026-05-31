@@ -75,6 +75,48 @@ function fmtDur(s: number) {
 }
 
 /* ─────────────────────────────────────────────────────────── */
+
+/* Module-level Overpass cache — survives re-renders, fetched once per session.
+   Key: street_name (as stored in OSM tags.name), value: array of way segments. */
+let _streetCache: Map<string, [number,number][][]> | null = null;
+let _streetCachePromise: Promise<Map<string,[number,number][][]>> | null = null;
+
+const HEBREW_DAY_NUM: Record<string,number> = {
+  "ראשון":0,"שני":1,"שלישי":2,"רביעי":3,"חמישי":4,"שישי":5,
+};
+
+/* Fetch all named road ways in Nes Ziona bounding box once, build a name→segments map */
+function fetchNesZionaStreets(): Promise<Map<string,[number,number][][]>> {
+  if (_streetCache) return Promise.resolve(_streetCache);
+  if (_streetCachePromise) return _streetCachePromise;
+
+  _streetCachePromise = fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: "[out:json][timeout:60];way[\"highway\"][\"name\"](31.895,34.775,31.960,34.870);out geom;",
+  })
+    .then(r => r.json())
+    .then((data: { elements: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] }) => {
+      const map = new Map<string, [number,number][][]>();
+      for (const el of data.elements ?? []) {
+        const name = el.tags?.name;
+        if (!name || !el.geometry?.length) continue;
+        const seg: [number,number][] = el.geometry.map(({ lat, lon }) => [lat, lon]);
+        if (!map.has(name)) map.set(name, []);
+        map.get(name)!.push(seg);
+      }
+      _streetCache = map;
+      _streetCachePromise = null;
+      return map;
+    })
+    .catch(() => {
+      _streetCachePromise = null;
+      return new Map<string,[number,number][][]>();
+    });
+
+  return _streetCachePromise;
+}
+
 function MapPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -137,12 +179,11 @@ function MapPageInner() {
   const [clearanceDay,    setClearanceDay]    = useState<string>("");
 
   /* street clearance mode — floating button */
-  const [streetModeActive,  setStreetModeActive]  = useState(false);
-  const [streetModeDay,     setStreetModeDay]     = useState<"היום"|"מחר"|"מחרתיים">("מחר");
-  const [scheduleData,      setScheduleData]      = useState<{street_name:string; clearance_day:string}[]>([]);
-  const [clearanceStreets,  setClearanceStreets]  = useState<[number,number][][]>([]);
-  const [streetLoading,     setStreetLoading]     = useState(false);
-  const overpassCacheRef = useRef<Record<string,[number,number][][]>>({});
+  const [streetModeActive, setStreetModeActive] = useState(false);
+  const [streetModeDay,    setStreetModeDay]    = useState<"היום"|"מחר"|"מחרתיים">("מחר");
+  const [scheduleData,     setScheduleData]     = useState<{street_name:string; clearance_day:string}[]>([]);
+  const [clearanceStreets, setClearanceStreets] = useState<[number,number][][]>([]);
+  const [streetLoading,    setStreetLoading]    = useState(false);
 
   /* navigation mode */
   const [navDest,  setNavDest]  = useState<NavDest | null>(null);
@@ -158,45 +199,36 @@ function MapPageInner() {
       .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;clearance_day:string}[]));
   }, []);
 
-  /* fetch Overpass street geometries when mode/day changes */
+  /* resolve street geometries whenever mode or day changes */
   useEffect(() => {
     if (!streetModeActive || !scheduleData.length) {
       setClearanceStreets([]);
       return;
     }
-    const HEBREW_DAY: Record<string,number> = {
-      "ראשון":0,"שני":1,"שלישי":2,"רביעי":3,"חמישי":4,"שישי":5,
-    };
     const offset = streetModeDay === "מחר" ? 1 : streetModeDay === "מחרתיים" ? 2 : 0;
-    const d = new Date(); d.setDate(d.getDate() + offset);
-    const jsDay = d.getDay();
-    const streets = scheduleData
-      .filter(s => HEBREW_DAY[s.clearance_day] === jsDay)
-      .map(s => s.street_name);
-    if (!streets.length) { setClearanceStreets([]); return; }
+    const target = new Date();
+    target.setDate(target.getDate() + offset);
+    const jsDay = target.getDay();
 
-    const cacheKey = `${jsDay}`;
-    if (overpassCacheRef.current[cacheKey]) {
-      setClearanceStreets(overpassCacheRef.current[cacheKey]);
-      return;
-    }
+    const scheduledNames = new Set(
+      scheduleData
+        .filter(s => HEBREW_DAY_NUM[s.clearance_day] === jsDay)
+        .map(s => s.street_name)
+    );
+    if (!scheduledNames.size) { setClearanceStreets([]); return; }
 
     setStreetLoading(true);
-    const namePattern = streets.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-    const query = `[out:json][timeout:30];area["name"="נס ציונה"]["boundary"="administrative"]->.a;way["name"~"^(${namePattern})$"]["highway"](area.a);out geom;`;
-    fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query })
-      .then(r => r.json())
-      .then(data => {
-        const segs: [number,number][][] = (data.elements || [])
-          .filter((e: {geometry?:unknown[]}) => e.geometry)
-          .map((e: {geometry:{lat:number;lon:number}[]}) =>
-            e.geometry.map(({ lat, lon }) => [lat, lon] as [number,number])
-          );
-        overpassCacheRef.current[cacheKey] = segs;
-        setClearanceStreets(segs);
-      })
-      .catch(() => setClearanceStreets([]))
-      .finally(() => setStreetLoading(false));
+    fetchNesZionaStreets().then(streetMap => {
+      const segs: [number,number][][] = [];
+      streetMap.forEach((ways, osmName) => {
+        /* match if the OSM name contains any scheduled name or vice-versa */
+        const matched = [...scheduledNames].some(
+          sched => osmName.includes(sched) || sched.includes(osmName)
+        );
+        if (matched) segs.push(...ways);
+      });
+      setClearanceStreets(segs);
+    }).finally(() => setStreetLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streetModeActive, streetModeDay, scheduleData]);
 
