@@ -338,13 +338,15 @@ function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles
           overflow:"hidden",
           display:"flex", alignItems:"center", justifyContent:"center",
           cursor: primaryUrl ? "default" : "pointer",
-          marginBottom: extras.length > 0 ? 42 : 14,
+          marginBottom:14,
         }}
       >
         {primaryUrl ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={primaryUrl} alt="תצוגה" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+
+            {/* Remove primary button — top-left */}
             <button
               onClick={e => { e.stopPropagation(); onRemove(0); }}
               style={{
@@ -356,13 +358,54 @@ function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles
                 boxShadow:"var(--sh-sm)",
               }}
             >✕</button>
-            {/* primary badge */}
-            <div style={{
-              position:"absolute", bottom:10, right:10,
-              padding:"3px 10px", borderRadius:999,
-              background:"var(--ink)", color:"var(--paper)",
-              fontSize:11, fontWeight:700,
-            }}>ראשית</div>
+
+            {/* "ראשית" badge — bottom-left (right side reserved for thumbnails) */}
+            {extras.length === 0 && (
+              <div style={{
+                position:"absolute", bottom:10, right:10,
+                padding:"3px 10px", borderRadius:999,
+                background:"var(--ink)", color:"var(--paper)",
+                fontSize:11, fontWeight:700,
+              }}>ראשית</div>
+            )}
+
+            {/* ── Extra thumbnails overlay — inside image, bottom-right ── */}
+            {extras.length > 0 && (
+              <div style={{
+                position:"absolute", bottom:10, right:10,
+                display:"flex", gap:6,
+              }}>
+                {extras.map((url, i) => (
+                  <div key={i} style={{ position:"relative", flexShrink:0 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt=""
+                      style={{
+                        width:68, height:68, objectFit:"cover",
+                        borderRadius:10,
+                        border:"2.5px solid white",
+                        boxShadow:"0 2px 8px rgba(0,0,0,0.35)",
+                        display:"block",
+                      }}
+                    />
+                    {/* ✕ button — inside thumbnail top-right so overflow:hidden never clips it */}
+                    <button
+                      onClick={e => { e.stopPropagation(); onRemove(i + 1); }}
+                      style={{
+                        position:"absolute", top:4, right:4,
+                        width:20, height:20, borderRadius:"50%",
+                        background:"rgba(45,42,36,0.82)", color:"white",
+                        border:"1.5px solid white",
+                        display:"flex", alignItems:"center", justifyContent:"center",
+                        cursor:"pointer", fontSize:10, padding:0, fontWeight:800,
+                        lineHeight:1,
+                      }}
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         ) : (
           <div style={{ textAlign:"center", padding:40 }}>
@@ -374,41 +417,6 @@ function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles
           </div>
         )}
       </div>
-
-      {/* ── Extra thumbnails strip ── */}
-      {extras.length > 0 && (
-        <div style={{
-          display:"flex", gap:8, overflowX:"auto",
-          marginBottom:14, paddingBottom:4,
-          scrollbarWidth:"none",
-        }}>
-          {extras.map((url, i) => (
-            <div key={i} style={{ position:"relative", flexShrink:0 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url}
-                alt=""
-                style={{
-                  width:72, height:72, objectFit:"cover",
-                  borderRadius:10, border:"2px solid var(--ink)",
-                  display:"block",
-                }}
-              />
-              <button
-                onClick={() => onRemove(i + 1)}
-                style={{
-                  position:"absolute", top:-7, left:-7,
-                  width:22, height:22, borderRadius:"50%",
-                  background:"var(--ink)", color:"var(--paper)",
-                  border:"1.5px solid var(--paper)",
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  cursor:"pointer", fontSize:11, padding:0, fontWeight:700,
-                }}
-              >✕</button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Hidden inputs */}
       <input
