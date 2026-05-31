@@ -38,12 +38,13 @@ export default function ReportPage() {
   const [address,   setAddress]   = useState("");
   const [lat,       setLat]       = useState<number|null>(null);
   const [lng,       setLng]       = useState<number|null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const fileRef    = useRef<HTMLInputElement>(null); // gallery
+  const cameraRef  = useRef<HTMLInputElement>(null); // camera (auto-open)
 
-  /* auto-open camera as soon as page is ready */
+  /* auto-open camera when page is ready */
   useEffect(() => {
     if (authed && step === 1 && !photo) {
-      const t = setTimeout(() => fileRef.current?.click(), 150);
+      const t = setTimeout(() => cameraRef.current?.click(), 150);
       return () => clearTimeout(t);
     }
   }, [authed, step, photo]);
@@ -106,9 +107,9 @@ export default function ReportPage() {
       condition,
       tags,
       address,
-      location: lat && lng
-        ? `POINT(${lng} ${lat})`
-        : null,
+      location: lat && lng ? `POINT(${lng} ${lat})` : null,
+      lat:      lat ?? null,
+      lng:      lng ?? null,
       status: "active",
     }]).select().single();
 
@@ -196,6 +197,7 @@ export default function ReportPage() {
           <StepCamera
             photoUrl={photoUrl}
             fileRef={fileRef}
+            cameraRef={cameraRef}
             onFile={handlePhoto}
             onClear={() => { setPhoto(null); setPhotoUrl(null); }}
           />
@@ -246,9 +248,10 @@ export default function ReportPage() {
 }
 
 /* ── Step 1: Camera ── */
-function StepCamera({ photoUrl, fileRef, onFile, onClear }: {
+function StepCamera({ photoUrl, fileRef, cameraRef, onFile, onClear }: {
   photoUrl:string|null;
   fileRef:React.RefObject<HTMLInputElement | null>;
+  cameraRef:React.RefObject<HTMLInputElement | null>;
   onFile:(e:React.ChangeEvent<HTMLInputElement>)=>void;
   onClear:()=>void;
 }) {
@@ -264,7 +267,7 @@ function StepCamera({ photoUrl, fileRef, onFile, onClear }: {
 
       {/* preview / upload area */}
       <div
-        onClick={() => !photoUrl && fileRef.current?.click()}
+        onClick={() => !photoUrl && cameraRef.current?.click()}
         style={{
           position:"relative",
           aspectRatio:"4/5",
@@ -305,8 +308,17 @@ function StepCamera({ photoUrl, fileRef, onFile, onClear }: {
         )}
       </div>
 
+      {/* Gallery picker — triggered by the button */}
       <input
         ref={fileRef}
+        type="file"
+        accept="image/*"
+        onChange={onFile}
+        style={{ display:"none" }}
+      />
+      {/* Camera — auto-opened on page load */}
+      <input
+        ref={cameraRef}
         type="file"
         accept="image/*"
         capture="environment"

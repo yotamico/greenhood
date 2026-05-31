@@ -23,6 +23,7 @@ interface Item {
   category: string; condition: string; tags: string[] | null;
   address: string; pickup_day: string | null; status: string;
   created_at: string; reporter_id: string;
+  lat: number | null; lng: number | null;
 }
 interface Image { url: string; position: number; is_primary: boolean; }
 interface Reporter { name: string | null; avatar_color: string | null; xp: number; }
@@ -44,9 +45,10 @@ export default function ItemDetailPage() {
   const [images,   setImages]   = useState<Image[]>([]);
   const [reporter, setReporter] = useState<Reporter | null>(null);
   const [userId,   setUserId]   = useState<string | null>(null);
-  const [saved,    setSaved]    = useState(false);
-  const [marking,  setMarking]  = useState(false);
-  const [loading,  setLoading]  = useState(true);
+  const [saved,      setSaved]      = useState(false);
+  const [marking,    setMarking]    = useState(false);
+  const [loading,    setLoading]    = useState(true);
+  const [navigating, setNavigating] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -87,6 +89,28 @@ export default function ItemDetailPage() {
       await supabase.from("saved_items").insert({ user_id: userId, item_id: id });
     }
     setSaved(s => !s);
+  }
+
+  async function handleNavigate() {
+    if (!item || navigating) return;
+    setNavigating(true);
+    let lat = item.lat, lng = item.lng;
+    /* geocode address if coordinates not stored */
+    if (!lat || !lng) {
+      try {
+        const r = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(item.address)}&format=json&limit=1`
+        );
+        const d = await r.json();
+        if (d[0]) { lat = parseFloat(d[0].lat); lng = parseFloat(d[0].lon); }
+      } catch { /* ignore */ }
+    }
+    if (lat && lng) {
+      router.push(`/map?nav_lat=${lat}&nav_lng=${lng}&nav_title=${encodeURIComponent(item.title)}`);
+    } else {
+      router.push("/map");
+    }
+    setNavigating(false);
   }
 
   async function markTaken() {
@@ -372,19 +396,19 @@ export default function ItemDetailPage() {
           zIndex:20,
         }}>
           <button
-            onClick={() => {
-              const mapsUrl = `https://maps.google.com/?q=${encodeURIComponent(item.address)}`;
-              window.open(mapsUrl, "_blank");
-            }}
+            onClick={handleNavigate}
+            disabled={navigating}
             style={{
               flex:1, padding:"14px 0",
-              background:"var(--surface)", border:"2px solid var(--ink)",
+              background: navigating ? "var(--paper-2)" : "var(--surface)",
+              border:"2px solid var(--ink)",
               borderRadius:14, fontFamily:"var(--font-sans)", fontWeight:800,
-              fontSize:14, cursor:"pointer",
+              fontSize:14, cursor: navigating ? "not-allowed" : "pointer",
               boxShadow:"var(--sh-md)",
               display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+              opacity: navigating ? 0.7 : 1,
             }}
-          >🗺️ נווט</button>
+          >{navigating ? "🔍 מאתר…" : "🗺️ נווט"}</button>
 
           {item.reporter_id === userId ? (
             <button

@@ -3,60 +3,71 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import type { Session } from "@supabase/supabase-js";
 
 export default function AuthCallback() {
-  const router  = useRouter();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function handle() {
-      /* ── 1. Error from Supabase in query string ── */
-      const qp = new URLSearchParams(window.location.search);
-      const qErr = qp.get("error");
-      if (qErr) {
-        setError(qp.get("error_description") ?? qErr);
-        return;
-      }
+    let done = false;
 
-      /* ── 2. Implicit flow — token arrives in URL hash ── */
-      const hash = window.location.hash.replace(/^#/, "");
-      if (hash) {
-        const hp = new URLSearchParams(hash);
-        const accessToken  = hp.get("access_token");
-        const refreshToken = hp.get("refresh_token");
-
-        if (accessToken && refreshToken) {
-          const { data, error: sessErr } = await supabase.auth.setSession({
-            access_token:  accessToken,
-            refresh_token: refreshToken,
-          });
-          if (sessErr) { setError(sessErr.message); return; }
-          if (data.session) { await redirect(data.session.user.id); return; }
-        }
-      }
-
-      /* ── 3. PKCE flow — code arrives in query string ── */
-      const code = qp.get("code");
-      if (code) {
-        const { data, error: exErr } = await supabase.auth.exchangeCodeForSession(code);
-        if (exErr) { setError(exErr.message); return; }
-        if (data.session) { await redirect(data.session.user.id); return; }
-      }
-
-      /* ── 4. Already have a session (page refresh) ── */
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) { await redirect(session.user.id); return; }
-
-      setError("לא הצלחנו לאמת את הכניסה. נסה שוב.");
+    /* ── Error forwarded by Supabase in query string ── */
+    const qp = new URLSearchParams(window.location.search);
+    const qErr = qp.get("error");
+    if (qErr) {
+      setError(qp.get("error_description") ?? qErr);
+      return;
     }
 
-    async function redirect(userId: string) {
-      const { data: profile } = await supabase
-        .from("profiles").select("onboarded").eq("id", userId).single();
-      router.replace(profile?.onboarded ? "/map" : "/welcome");
+    async function go(session: Session | null) {
+      if (done || !session) return;
+      done = true;
+      try {
+        const { data: profile } = await supabase
+          .from("profiles").select("onboarded").eq("id", session.user.id).single();
+        router.replace(profile?.onboarded ? "/map" : "/welcome");
+      } catch {
+        router.replace("/map");
+      }
     }
 
-    handle();
+    /* SDK handles both implicit (#access_token) and PKCE (?code) automatically */
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      go(session);
+    });
+
+    /* Immediate check — covers the page-refresh case */
+    supabase.auth.getSession().then(({ data: { session } }) => go(session));
+
+    /* Explicit PKCE exchange — in case SDK doesn't pick up ?code= automatically */
+    const code = qp.get("code");
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code)
+        .then(({ data, error: e }) => {
+          if (e && !done) setError(e.message);
+          else go(data.session);
+        })
+        .catch(e => { if (!done) setError(String(e?.message ?? e)); });
+    }
+
+    /* Diagnostic timeout — shows URL shape to help debug */
+    const t = setTimeout(() => {
+      if (!done) {
+        const hashLen   = window.location.hash.length;
+        const hasCode   = qp.has("code");
+        const hasToken  = window.location.hash.includes("access_token");
+        setError(
+          `הכניסה לא הושלמה (timeout).\n` +
+          `hash:${hashLen > 1 ? "yes" : "no"} access_token:${hasToken ? "yes" : "no"} code:${hasCode ? "yes" : "no"}`
+        );
+      }
+    }, 12_000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(t);
+    };
   }, [router]);
 
   if (error) {
@@ -69,7 +80,13 @@ export default function AuthCallback() {
       }}>
         <div style={{fontSize:48}}>😕</div>
         <div style={{fontFamily:"var(--font-display)",fontWeight:900,fontSize:20}}>הכניסה נכשלה</div>
-        <div style={{fontSize:14,color:"var(--muted)",fontWeight:500,maxWidth:300,lineHeight:1.5}}>
+        <div style={{
+          fontSize:13, color:"var(--muted)", fontWeight:500,
+          maxWidth:320, lineHeight:1.6,
+          whiteSpace:"pre-wrap", wordBreak:"break-all",
+          background:"var(--paper-2)", padding:"10px 14px",
+          borderRadius:10, border:"1.5px solid var(--ink)",
+        }}>
           {error}
         </div>
         <button

@@ -16,23 +16,22 @@ export default function RootPage() {
 
   useEffect(() => {
     async function check() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      /* Validate the JWT server-side — getSession() reads localStorage and
+         can return a stale session whose JWT is expired or from a partial
+         OAuth flow. getUser() hits /auth/v1/user and rejects invalid tokens. */
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        await supabase.auth.signOut(); // clear any stale localStorage
         router.replace("/login");
         return;
       }
-      // Check onboarding status
       const { data: profile } = await supabase
         .from("profiles")
         .select("onboarded")
-        .eq("id", session.user.id)
+        .eq("id", user.id)
         .single();
 
-      if (!profile?.onboarded) {
-        router.replace("/welcome");
-      } else {
-        router.replace("/map"); // fully onboarded → map home
-      }
+      router.replace(profile?.onboarded ? "/map" : "/welcome");
     }
     check();
   }, [router]);

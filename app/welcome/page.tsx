@@ -367,23 +367,30 @@ export default function WelcomePage() {
   const [personas, setPersonas]   = useState<Persona[]>([]);
   const [locGranted, setLocGranted] = useState(false);
   const [saving, setSaving]       = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const TOTAL = 3;
 
   async function finish() {
     setSaving(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase.from("profiles").upsert({
-          id: user.id,
-          personas,
-          onboarded: true,
-        }, { onConflict: "id" });
-      }
-    } catch { /* ignore */ }
-    setSaving(false);
-    router.replace("/");
+    setSaveError(null);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) {
+      await supabase.auth.signOut();
+      router.replace("/login");
+      return;
+    }
+    const { error } = await supabase.from("profiles").upsert({
+      id: session.user.id,
+      personas,
+      onboarded: true,
+    }, { onConflict: "id" });
+    if (error) {
+      setSaveError(error.message);
+      setSaving(false);
+      return;
+    }
+    router.replace("/map");
   }
 
   function handleNext() {
@@ -461,6 +468,20 @@ export default function WelcomePage() {
         borderTop: "2px solid var(--ink)",
         flexShrink: 0,
       }}>
+        {saveError && (
+          <div style={{
+            marginBottom: 12,
+            padding: "10px 14px",
+            background: "var(--paper-2)",
+            border: "1.5px solid var(--ink)",
+            borderRadius: 10,
+            fontSize: 12, color: "var(--ink-soft)",
+            fontWeight: 500, lineHeight: 1.5,
+            wordBreak: "break-all",
+          }}>
+            שגיאה: {saveError}
+          </div>
+        )}
         <button
           onClick={handleNext}
           disabled={saving}

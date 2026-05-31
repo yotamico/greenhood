@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import { useEffect, useRef } from "react";
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -48,23 +48,45 @@ const CAT_PIN: Record<string,{ emoji:string; bg:string }> = {
 
 interface Item { id: string; title: string; category: string; lat: number | null; lng: number | null; }
 
+interface NavDest { lat: number; lng: number; title: string; }
+
 interface Props {
-  userPos: [number,number] | null;
-  items:   Item[];
+  userPos:        [number,number] | null;
+  items:          Item[];
+  onItemClick?:   (id: string) => void;
+  navRoute?:      [number,number][] | null;
+  navDest?:       NavDest | null;
+  centerTrigger?: number;
 }
 
-/* Fly-to helper */
-function FlyTo({ pos }: { pos: [number,number] }) {
+/* Center on user — only fires when trigger increments (button click) */
+function CenterOnUser({ pos, trigger }: { pos: [number,number] | null; trigger: number }) {
+  const map = useMap();
+  const posRef = useRef(pos);
+  posRef.current = pos;
+  useEffect(() => {
+    if (!posRef.current || trigger === 0) return;
+    map.flyTo(posRef.current, 16, { duration: 1.1 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trigger]); // only react to trigger, never to pos changes
+  return null;
+}
+
+/* Fit map to show full route */
+function FitRoute({ route }: { route: [number,number][] }) {
   const map = useMap();
   useEffect(() => {
-    map.flyTo(pos, 15, { duration: 1.2 });
-  }, [map, pos]);
+    if (route.length >= 2) {
+      map.fitBounds(route as L.LatLngBoundsExpression, { padding: [70, 30], maxZoom: 16 });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // only on mount — don't re-fit on every position update
   return null;
 }
 
 const NES_ZIONA: [number,number] = [31.9297, 34.8307];
 
-export default function GHMapLeaflet({ userPos, items }: Props) {
+export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, navDest, centerTrigger = 0 }: Props) {
   const center = userPos ?? NES_ZIONA;
 
   /* ── user dot icon ── */
@@ -102,8 +124,8 @@ export default function GHMapLeaflet({ userPos, items }: Props) {
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
       />
 
-      {/* Fly to user when location found */}
-      {userPos && <FlyTo pos={userPos} />}
+      {/* Center on user only when button is pressed */}
+      <CenterOnUser pos={userPos} trigger={centerTrigger} />
 
       {/* User location dot */}
       {userPos && (
@@ -120,10 +142,36 @@ export default function GHMapLeaflet({ userPos, items }: Props) {
               key={it.id}
               position={[it.lat!, it.lng!]}
               icon={makePin(pin.emoji, pin.bg)}
+              eventHandlers={{ click: () => onItemClick?.(it.id) }}
             />
           );
         })
       }
+
+      {/* Navigation route */}
+      {navRoute && navRoute.length > 1 && (
+        <>
+          <FitRoute route={navRoute} />
+          {/* Shadow stroke */}
+          <Polyline
+            positions={navRoute}
+            pathOptions={{ color: "#2D2A24", weight: 10, opacity: 0.2 }}
+          />
+          {/* Main route line */}
+          <Polyline
+            positions={navRoute}
+            pathOptions={{ color: "#6B9956", weight: 6, opacity: 0.95 }}
+          />
+        </>
+      )}
+
+      {/* Destination pin */}
+      {navDest && (
+        <Marker
+          position={[navDest.lat, navDest.lng]}
+          icon={makePin("🎯", "#FFB347")}
+        />
+      )}
     </MapContainer>
   );
 }
