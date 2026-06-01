@@ -399,7 +399,7 @@ export default function WelcomePage() {
   }
 
   const ctaLabel =
-    step === 0 ? "יאללה, מתחילים ←" :
+    step === 0 ? "בוא נצא לציד ←" :
     step === 1 ? (personas.length > 0 ? `המשך עם ${personas.length} בחירות ←` : "המשך ←") :
     saving ? "שמירה…" : "סיום וכניסה לאפליקציה ✓";
 
