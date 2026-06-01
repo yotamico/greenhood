@@ -477,7 +477,7 @@ export default function ItemDetailPage() {
               disabled={navigating}
               style={{
                 flex:1, padding:"14px 0",
-                background: navigating ? "var(--paper-2)" : "var(--ink)",
+                background: navigating ? "var(--paper-2)" : "var(--primary)",
                 color: navigating ? "var(--ink)" : "var(--paper)",
                 border:"2px solid var(--ink)", borderRadius:14,
                 fontFamily:"var(--font-sans)", fontWeight:900,
