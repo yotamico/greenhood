@@ -12,11 +12,11 @@ type Persona = "hunter" | "upcycler" | "vintage" | "reporter" | "org";
 const PERSONAS: {
   id: Persona; label: string; sub: string; emoji: string; color: string;
 }[] = [
-  { id: "hunter",   label: "ציידת / ציידי מציאות", sub: "מחפש/ת כלים וחפצים",    emoji: "🎯", color: "var(--accent-tint)"   },
-  { id: "upcycler", label: "משפץ / מעצב/ת",        sub: "נותן/ת חיים חדשים",      emoji: "🔧", color: "var(--warning-tint)"  },
-  { id: "vintage",  label: "חובב/ת וינטג׳",         sub: "אוסף/ת פריטים נדירים",   emoji: "🪑", color: "var(--info-tint)"    },
-  { id: "reporter", label: "מדווח/ת על פריטים",     sub: "מפרסם/ת מה שמצאת",      emoji: "📦", color: "var(--primary-light)" },
-  { id: "org",      label: "ארגון / צוות",           sub: "אוסף עבור קהילה",        emoji: "♻️", color: "var(--paper-2)"      },
+  { id: "hunter",   label: "ציייד מציאות",   sub: "מחפש אוצרות",        emoji: "🎯", color: "var(--accent-tint)"   },
+  { id: "upcycler", label: "משפץ / מייקר",   sub: "נותן חיים חדשים",    emoji: "🔧", color: "var(--warning-tint)"  },
+  { id: "vintage",  label: "חובב וינטג׳",    sub: "אוסף פריטים נדירים", emoji: "🪑", color: "var(--info-tint)"     },
+  { id: "reporter", label: "מוסר חפצים",     sub: "מפנה מהבית",         emoji: "📦", color: "var(--primary-light)" },
+  { id: "org",      label: "ארגון / צדקה",   sub: "אוסף לקהילה",        emoji: "♻️", color: "var(--paper-2)"       },
 ];
 
 /* ──────────────────────────────────────────────────────────
