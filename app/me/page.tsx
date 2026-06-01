@@ -71,6 +71,18 @@ export default function ProfilePage() {
   const reported = myItems.length;
   const taken = myItems.filter(i => i.status === "taken").length;
 
+  const ACHIEVEMENTS = [
+    { id: "first",   emoji: "🥇", label: "ראשון בשכונה",  color: "#C8A021", unlocked: reported >= 1  },
+    { id: "nature",  emoji: "♻️", label: "יד הטבע",       color: "#6B9956", unlocked: reported >= 5  },
+    { id: "fire",    emoji: "🔥", label: "שבוע רצוף",     color: "#E55A2B", unlocked: reported >= 7  },
+    { id: "camera",  emoji: "📸", label: "צלם מקצוע",     color: "#5B8DB8", unlocked: reported >= 10 },
+    { id: "hunter",  emoji: "🎯", label: "ציידת מציאות",   color: "#C97464", unlocked: taken >= 1     },
+    { id: "veteran", emoji: "⭐", label: "ותיק שכונה",    color: "#9B59B6", unlocked: level >= 5     },
+    { id: "social",  emoji: "💬", label: "חברותי",         color: "#3498DB", unlocked: reported >= 3  },
+    { id: "impact",  emoji: "🌱", label: "שומר הסביבה",   color: "#27AE60", unlocked: reported >= 15 },
+  ];
+  const unlockedCount = ACHIEVEMENTS.filter(a => a.unlocked).length;
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.replace("/login");
@@ -189,6 +201,51 @@ export default function ProfilePage() {
           <div style={{fontSize:12,color:"var(--muted-2)",fontWeight:500}}>
             הערכה: 8 ק"ג CO₂ לכל פריט
           </div>
+        </div>
+      </div>
+
+      {/* achievements */}
+      <div style={{ padding:"8px 16px 4px" }}>
+        <div style={{
+          display:"flex", justifyContent:"space-between", alignItems:"center",
+          marginBottom:12,
+        }}>
+          <div style={{
+            fontFamily:"var(--font-display)", fontWeight:900, fontSize:20,
+          }}>הישגים</div>
+          <div style={{ fontSize:12, color:"var(--muted)", fontWeight:600 }}>
+            {unlockedCount} מתוך {ACHIEVEMENTS.length} —
+          </div>
+        </div>
+        <div style={{
+          display:"flex", gap:10,
+          overflowX:"auto", paddingBottom:6,
+          scrollbarWidth:"none",
+        }}>
+          {ACHIEVEMENTS.map(a => (
+            <div key={a.id} style={{
+              flexShrink:0, width:78,
+              display:"flex", flexDirection:"column", alignItems:"center", gap:6,
+              padding:"12px 6px 10px",
+              background: a.unlocked ? a.color + "22" : "var(--paper-2)",
+              border:`2px solid ${a.unlocked ? a.color : "var(--border)"}`,
+              borderRadius:16, boxShadow: a.unlocked ? "var(--sh-sm)" : "none",
+            }}>
+              <div style={{
+                fontSize:28,
+                filter: a.unlocked ? "none" : "grayscale(1)",
+                opacity: a.unlocked ? 1 : 0.35,
+              }}>{a.emoji}</div>
+              <div style={{
+                fontSize:10, fontWeight:700, textAlign:"center",
+                color: a.unlocked ? "var(--ink)" : "var(--muted)",
+                lineHeight:1.3,
+              }}>{a.label}</div>
+              {!a.unlocked && (
+                <div style={{ fontSize:11, opacity:0.5 }}>🔒</div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 
