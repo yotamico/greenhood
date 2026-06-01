@@ -262,9 +262,20 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
   const [navTargetLabel,setNavTargetLabel]= useState("");
   const [navToRoute,    setNavToRoute]    = useState<LatLng[] | null>(null);
   const [lightboxUrl,   setLightboxUrl]   = useState<string | null>(null);
+  const [chipActive,    setChipActive]    = useState(false);
+  const [chipDay,       setChipDay]       = useState<"today" | "tomorrow" | "sunday">("today");
+  const [chipRoute,     setChipRoute]     = useState<LatLng[] | null>(null);
+  const [chipStreetOrder, setChipStreetOrder] = useState<number[]>([]);
+  const [chipRouteInfo, setChipRouteInfo] = useState<RouteInfo | null>(null);
+  const [chipComputing, setChipComputing] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
-  const today = HEBREW_DAYS[new Date().getDay()];
+  const today      = HEBREW_DAYS[new Date().getDay()];
+  const todayIdx   = new Date().getDay();
+  const selectedHebDay =
+    chipDay === "today"    ? HEBREW_DAYS[todayIdx] :
+    chipDay === "tomorrow" ? HEBREW_DAYS[(todayIdx + 1) % 7] :
+                             "ראשון";
 
   const todayStreets = useMemo(
     () => NES_ZIONA_STREETS.filter(s => s.takeout_day === today),
@@ -283,6 +294,14 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
       .map(s => ({ name: s.name, collection_day: s.collection_day, coords: geomMap[s.name] }))
       .filter(s => s.coords?.length > 0),
     [todayStreets, geomMap]
+  );
+
+  const chipStreetsWithGeom = useMemo(
+    () => NES_ZIONA_STREETS
+      .filter(s => s.takeout_day === selectedHebDay)
+      .map(s => ({ name: s.name, collection_day: s.collection_day, coords: geomMap[s.name] }))
+      .filter(s => s.coords?.length > 0),
+    [selectedHebDay, geomMap]
   );
 
   useEffect(() => {
@@ -333,6 +352,52 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
       if (result) setNavToRoute(result.route);
     });
   }, [navTarget]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── חישוב מסלול לצ'יפ ──
+  useEffect(() => {
+    if (!chipActive || chipStreetsWithGeom.length === 0) {
+      setChipRoute(null);
+      setChipStreetOrder([]);
+      setChipRouteInfo(null);
+      setChipComputing(false);
+      return;
+    }
+    setChipComputing(true);
+    let cancelled = false;
+    const centers = chipStreetsWithGeom.map(s => midpoint(s.coords));
+
+    (async () => {
+      const tripResult = await fetchOSRMTrip(centers, userPos);
+      if (cancelled) return;
+
+      const order = tripResult?.order ?? (() => {
+        const startIdx = userPos
+          ? centers.reduce((best, c, i) =>
+              dist2(c, userPos) < dist2(centers[best], userPos) ? i : best, 0)
+          : 0;
+        return nearestNeighborTSP(centers, startIdx);
+      })();
+
+      if (cancelled) return;
+      setChipStreetOrder(order);
+
+      const wps: LatLng[] = [];
+      if (userPos) wps.push(userPos);
+      order.map(i => chipStreetsWithGeom[i]).filter(Boolean).forEach(s => wps.push(midpoint(s.coords)));
+
+      const detRes = await fetchOSRMRoute(wps);
+      if (cancelled) return;
+
+      setChipRoute(detRes?.route ?? tripResult?.route ?? null);
+      const dist = detRes?.dist ?? tripResult?.dist ?? 0;
+      const dur  = detRes?.dur  ?? tripResult?.dur  ?? 0;
+      const { km, time } = fmtRoute(dist, dur);
+      setChipRouteInfo({ km, time, gmapsUrl: buildGmapsUrl(chipStreetsWithGeom, order, userPos) });
+      setChipComputing(false);
+    })();
+
+    return () => { cancelled = true; };
+  }, [chipActive, selectedHebDay, geomMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── גילוי הגעה ליעד (~20 מ') ──
   useEffect(() => {
@@ -429,8 +494,8 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
             maxZoom={19}
           />
 
-          {/* רחובות היום — צהוב (מתחת לקו ניווט) */}
-          {streetsWithGeom.map(s => (
+          {/* רחובות — צהוב (מתחת לקו ניווט) */}
+          {(chipActive ? chipStreetsWithGeom : streetsWithGeom).map(s => (
             <Polyline
               key={s.name}
               positions={s.coords}
@@ -438,7 +503,7 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
             >
               <Popup className="eco-popup">
                 <div className="popup-inner" dir="rtl">
-                  <p className="popup-chip">הוצאה: {today}</p>
+                  <p className="popup-chip">הוצאה: {chipActive ? selectedHebDay : today}</p>
                   <h3 className="popup-street">{s.name}</h3>
                   <p className="popup-sub">פינוי: {s.collection_day}</p>
                 </div>
@@ -446,13 +511,18 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
             </Polyline>
           ))}
 
-          {/* קו מסלול — קורל לדיווח, ירוק-זית לאיסוף */}
+          {/* קו מסלול */}
           {navToRoute && navToRoute.length > 1 ? (
             <>
               <Polyline positions={navToRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
               <Polyline positions={navToRoute} pathOptions={{ color: "#C97464", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }} />
             </>
-          ) : osrmRoute && osrmRoute.length > 1 ? (
+          ) : chipActive && chipRoute && chipRoute.length > 1 ? (
+            <>
+              <Polyline positions={chipRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
+              <Polyline positions={chipRoute} pathOptions={{ color: "#6B9956", weight: 7, opacity: 1.0, dashArray: "14 10", lineCap: "round", lineJoin: "round" }} />
+            </>
+          ) : !chipActive && osrmRoute && osrmRoute.length > 1 ? (
             <>
               <Polyline positions={osrmRoute} pathOptions={{ color: "#ffffff", weight: 11, opacity: 0.85, lineCap: "round", lineJoin: "round" }} />
               <Polyline positions={osrmRoute} pathOptions={{ color: "#6B9956", weight: 7, opacity: 1.0, lineCap: "round", lineJoin: "round" }} />
@@ -460,8 +530,8 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
           ) : null}
 
           {/* מרקרי עצירות ממוספרות */}
-          {streetOrder.map((streetIdx, visitNum) => {
-            const s = streetsWithGeom[streetIdx];
+          {(chipActive ? chipStreetOrder : streetOrder).map((streetIdx, visitNum) => {
+            const s = (chipActive ? chipStreetsWithGeom : streetsWithGeom)[streetIdx];
             if (!s) return null;
             return (
               <Marker key={s.name} position={midpoint(s.coords)} icon={stopIcon(visitNum + 1)}>
@@ -545,6 +615,55 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
           )}
         </button>
 
+        {/* ── צ'יפ מסלול פינוי יומי ── */}
+        <div style={{ position: "absolute", top: 12, left: 12, zIndex: 1001, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6 }}>
+          <button
+            onClick={() => setChipActive(v => !v)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              background: chipActive ? "#6B9956" : "#FFFFFF",
+              color: chipActive ? "#fff" : "#2D2A24",
+              border: "2px solid #2D2A24", borderRadius: 20,
+              padding: "7px 14px", fontSize: 13, fontWeight: 700,
+              fontFamily: "'Rubik','Heebo',sans-serif",
+              cursor: "pointer", boxShadow: "3px 3px 0 rgba(45,42,36,0.18)",
+              transition: "background 0.15s, color 0.15s", whiteSpace: "nowrap",
+            }}
+          >
+            {chipComputing ? "⏳ מחשב..." : chipActive ? "מסלול פינוי פעיל ✓" : "🗺 מסלול פינוי"}
+          </button>
+          {chipActive && (
+            <div style={{
+              display: "flex", gap: 3,
+              background: "#FFFFFF", border: "2px solid #2D2A24",
+              borderRadius: 12, padding: 4,
+              boxShadow: "2px 2px 0 rgba(45,42,36,0.18)",
+            }}>
+              {(["today", "tomorrow", "sunday"] as const).map(d => {
+                const label = d === "today" ? "היום" : d === "tomorrow" ? "מחר" : "א'";
+                const active = chipDay === d;
+                return (
+                  <button
+                    key={d}
+                    onClick={() => setChipDay(d)}
+                    style={{
+                      padding: "5px 11px", borderRadius: 8,
+                      fontSize: 12, fontWeight: active ? 700 : 500,
+                      background: active ? "#6B9956" : "transparent",
+                      color: active ? "#fff" : "#7A7363",
+                      border: active ? "1.5px solid #2D4A2B" : "1.5px solid transparent",
+                      cursor: "pointer", fontFamily: "'Rubik','Heebo',sans-serif",
+                      transition: "all 0.1s",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         {/* בר ניווט פעיל */}
         {navMode && (navTarget != null || (nextStop && userPos)) && (
           <div className="nav-bar" dir="rtl">
@@ -567,27 +686,35 @@ export default function EcoMap({ filterType, reports, onUserPos }: Props) {
         )}
 
         {/* בר מסלול תחתי */}
-        {status === "ready" && routeInfo && (
+        {status === "ready" && (chipActive ? (chipRouteInfo || chipComputing) : routeInfo) && (
           <div className="route-bar" dir="rtl">
             <div className="route-stats">
-              <span className="route-km">{routeInfo.km} ק"מ</span>
-              <span className="route-sep">|</span>
-              <span className="route-time">{routeInfo.time}</span>
+              {chipActive && chipComputing ? (
+                <span className="route-km">מחשב מסלול...</span>
+              ) : (
+                <>
+                  <span className="route-km">{(chipActive ? chipRouteInfo! : routeInfo!).km} ק"מ</span>
+                  <span className="route-sep">|</span>
+                  <span className="route-time">{(chipActive ? chipRouteInfo! : routeInfo!).time}</span>
+                </>
+              )}
             </div>
-            <button
-              className={`route-nav-btn${navMode ? " nav-active" : ""}`}
-              onClick={() => {
-                setNavMode(v => !v);
-                if (navMode) {
-                  setNavTarget(null);
-                  setNavToRoute(null);
-                } else if (userPos && mapRef.current) {
-                  mapRef.current.flyTo(userPos, 17, { duration: 0.8 });
-                }
-              }}
-            >
-              {navMode ? "⏹ עצור ניווט" : "▶ נווט"}
-            </button>
+            {!chipActive && (
+              <button
+                className={`route-nav-btn${navMode ? " nav-active" : ""}`}
+                onClick={() => {
+                  setNavMode(v => !v);
+                  if (navMode) {
+                    setNavTarget(null);
+                    setNavToRoute(null);
+                  } else if (userPos && mapRef.current) {
+                    mapRef.current.flyTo(userPos, 17, { duration: 0.8 });
+                  }
+                }}
+              >
+                {navMode ? "⏹ עצור ניווט" : "▶ נווט"}
+              </button>
+            )}
           </div>
         )}
       </div>
