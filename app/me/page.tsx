@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
 import type { User } from "@supabase/supabase-js";
+import Link from "next/link";
 
 interface Profile {
   name: string;
@@ -19,6 +20,7 @@ export default function ProfilePage() {
   const [user,    setUser]    = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [myItems, setMyItems] = useState<{ id:string; title:string; status:string }[]>([]);
+  const [unreadItems, setUnreadItems] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -36,7 +38,27 @@ export default function ProfilePage() {
         .eq("reporter_id", session.user.id)
         .order("created_at", { ascending: false })
         .limit(20);
-      setMyItems(items ?? []);
+      const itemList = items ?? [];
+      setMyItems(itemList);
+
+      // Check unread messages for each item
+      if (itemList.length) {
+        const uid = session.user.id;
+        const ids = itemList.map(i => i.id);
+        const { data: reads } = await supabase
+          .from("message_reads").select("item_id,last_read_at").eq("user_id", uid).in("item_id", ids);
+        const readMap = new Map((reads ?? []).map(r => [r.item_id, r.last_read_at]));
+
+        const unread = new Set<string>();
+        await Promise.all(ids.map(async (itemId) => {
+          const lastRead = readMap.get(itemId) ?? "1970-01-01T00:00:00Z";
+          const { count } = await supabase
+            .from("messages").select("*", { count: "exact", head: true })
+            .eq("item_id", itemId).gt("created_at", lastRead).neq("sender_id", uid);
+          if ((count ?? 0) > 0) unread.add(itemId);
+        }));
+        setUnreadItems(unread);
+      }
     });
   }, [router]);
 
@@ -191,24 +213,47 @@ export default function ProfilePage() {
           </div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-            {myItems.map(it => (
-              <div key={it.id} style={{
-                padding:"12px 14px",
-                background:"var(--surface)",
-                border:"2px solid var(--ink)",
-                borderRadius:12, boxShadow:"var(--sh-sm)",
-                display:"flex", justifyContent:"space-between", alignItems:"center",
-              }}>
-                <div style={{fontWeight:700,fontSize:14}}>{it.title}</div>
-                <span style={{
-                  padding:"3px 10px", borderRadius:999, fontSize:11, fontWeight:800,
-                  background: it.status==="taken" ? "var(--primary-tint)" : "var(--warning-tint)",
-                  border:"1.5px solid var(--ink)",
-                }}>
-                  {it.status==="taken" ? "✅ נלקח" : "🟡 פעיל"}
-                </span>
-              </div>
-            ))}
+            {myItems.map(it => {
+              const hasUnread = unreadItems.has(it.id);
+              return (
+                <Link key={it.id} href={`/items/${it.id}`} style={{ textDecoration:"none" }}>
+                  <div style={{
+                    padding:"12px 14px",
+                    background: hasUnread ? "var(--primary-tint)" : "var(--surface)",
+                    border: hasUnread ? "2px solid var(--primary)" : "2px solid var(--ink)",
+                    borderRadius:12, boxShadow:"var(--sh-sm)",
+                    display:"flex", justifyContent:"space-between", alignItems:"center",
+                    cursor:"pointer",
+                  }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      {hasUnread && (
+                        <div style={{
+                          width:9, height:9, borderRadius:"50%",
+                          background:"#E53E3E", flexShrink:0,
+                          boxShadow:"0 0 0 2px var(--primary-tint)",
+                        }}/>
+                      )}
+                      <div style={{ fontWeight:700, fontSize:14, color:"var(--ink)" }}>{it.title}</div>
+                    </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      {hasUnread && (
+                        <span style={{
+                          padding:"2px 8px", borderRadius:999, fontSize:10, fontWeight:800,
+                          background:"#E53E3E", color:"#fff", border:"1.5px solid var(--ink)",
+                        }}>הודעה חדשה 💬</span>
+                      )}
+                      <span style={{
+                        padding:"3px 10px", borderRadius:999, fontSize:11, fontWeight:800,
+                        background: it.status==="taken" ? "var(--primary-tint)" : "var(--warning-tint)",
+                        border:"1.5px solid var(--ink)",
+                      }}>
+                        {it.status==="taken" ? "✅ נלקח" : "🟡 פעיל"}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

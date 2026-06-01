@@ -21,6 +21,33 @@ interface Item {
   reporter_id: string;
 }
 
+async function registerPush(userId: string) {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return;
+
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(vapidKey) as unknown as ArrayBuffer,
+    });
+
+    await supabase.from("push_subscriptions").upsert(
+      { user_id: userId, endpoint: sub.endpoint, subscription: sub.toJSON() },
+      { onConflict: "user_id,endpoint" }
+    );
+  } catch { /* permission denied or unsupported */ }
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
 export default function ChatPage() {
   const router   = useRouter();
   const params   = useParams();
@@ -33,7 +60,6 @@ export default function ChatPage() {
   const [sending,   setSending]   = useState(false);
   const [loading,   setLoading]   = useState(true);
 
-  /* profiles cache — ref so realtime handler always sees latest */
   const profilesRef = useRef<Map<string, Profile>>(new Map());
   const [profiles,  setProfiles]  = useState<Map<string, Profile>>(new Map());
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -43,7 +69,13 @@ export default function ChatPage() {
     setProfiles(new Map(profilesRef.current));
   }, []);
 
-  /* initial load */
+  async function markRead(uid: string) {
+    await supabase.from("message_reads").upsert(
+      { user_id: uid, item_id: itemId, last_read_at: new Date().toISOString() },
+      { onConflict: "user_id,item_id" }
+    );
+  }
+
   useEffect(() => {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -59,19 +91,20 @@ export default function ChatPage() {
       const msgList = (msgs ?? []) as Message[];
       setMessages(msgList);
 
-      /* prefetch profiles for all senders */
       const ids = [...new Set(msgList.map(m => m.sender_id))];
       if (ids.length) {
         const { data: profs } = await supabase.from("profiles")
           .select("id,name,avatar_color").in("id", ids);
         (profs ?? []).forEach((p) => addProfile(p as Profile));
       }
+
+      await markRead(session.user.id);
+      registerPush(session.user.id);
       setLoading(false);
     }
     init();
-  }, [itemId, router, addProfile]);
+  }, [itemId, router, addProfile]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* realtime subscription */
   useEffect(() => {
     const channel = supabase
       .channel(`chat-${itemId}`)
@@ -88,13 +121,13 @@ export default function ChatPage() {
             .select("id,name,avatar_color").eq("id", msg.sender_id).single();
           if (p) addProfile(p as Profile);
         }
+        if (userId) markRead(userId);
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [itemId, addProfile]);
+  }, [itemId, addProfile, userId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* scroll to bottom on new messages */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -105,6 +138,14 @@ export default function ChatPage() {
     const content = input.trim();
     setInput("");
     await supabase.from("messages").insert([{ item_id: itemId, sender_id: userId, content }]);
+
+    // Trigger push notification to item reporter
+    fetch("/api/send-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId, sender_id: userId, content, item_title: item?.title }),
+    }).catch(() => {});
+
     setSending(false);
   }
 

@@ -1,6 +1,32 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+
+async function fetchHasUnread(userId: string): Promise<boolean> {
+  // My items that have messages newer than my last_read_at
+  const { data: myItems } = await supabase
+    .from("items").select("id").eq("reporter_id", userId).eq("status", "active");
+  if (!myItems?.length) return false;
+
+  const itemIds = myItems.map(i => i.id);
+
+  // Get last_read_at for each of my items
+  const { data: reads } = await supabase
+    .from("message_reads").select("item_id,last_read_at").eq("user_id", userId).in("item_id", itemIds);
+  const readMap = new Map((reads ?? []).map(r => [r.item_id, r.last_read_at]));
+
+  // Check if any item has messages newer than last_read (or no read record at all)
+  for (const itemId of itemIds) {
+    const lastRead = readMap.get(itemId) ?? "1970-01-01T00:00:00Z";
+    const { count } = await supabase
+      .from("messages").select("*", { count: "exact", head: true })
+      .eq("item_id", itemId).gt("created_at", lastRead).neq("sender_id", userId);
+    if ((count ?? 0) > 0) return true;
+  }
+  return false;
+}
 
 const TABS = [
   {
@@ -47,6 +73,25 @@ const TABS = [
 export function TabBar() {
   const router   = useRouter();
   const pathname = usePathname();
+  const [hasUnread, setHasUnread] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return;
+      const userId = session.user.id;
+      fetchHasUnread(userId).then(setHasUnread);
+
+      // Re-check when a new message arrives on any of my items
+      const channel = supabase
+        .channel("tabbar-messages")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
+          fetchHasUnread(userId).then(setHasUnread);
+        })
+        .subscribe();
+
+      return () => { supabase.removeChannel(channel); };
+    });
+  }, [pathname]); // re-check when navigating (e.g. returning from chat marks read)
 
   return (
     <div style={{
@@ -63,6 +108,7 @@ export function TabBar() {
     }}>
       {TABS.map(tab => {
         const active = pathname.startsWith(tab.href);
+        const showDot = tab.id === "me" && hasUnread;
         return (
           <button
             key={tab.id}
@@ -77,6 +123,7 @@ export function TabBar() {
               gap: 4,
               padding: "4px 20px",
               fontFamily: "var(--font-sans)",
+              position: "relative",
             }}
           >
             <div style={{
@@ -89,8 +136,17 @@ export function TabBar() {
               justifyContent: "center",
               color: "var(--ink)",
               transition: "background 200ms",
+              position: "relative",
             }}>
               {tab.icon(active)}
+              {showDot && (
+                <div style={{
+                  position: "absolute", top: -2, right: -2,
+                  width: 9, height: 9, borderRadius: "50%",
+                  background: "#E53E3E",
+                  border: "2px solid var(--surface)",
+                }}/>
+              )}
             </div>
             <span style={{
               fontSize: 11,
