@@ -115,7 +115,7 @@ export default function ChatPage() {
         filter: `item_id=eq.${itemId}`,
       }, async (payload) => {
         const msg = payload.new as Message;
-        setMessages(prev => [...prev, msg]);
+        setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
         if (!profilesRef.current.has(msg.sender_id)) {
           const { data: p } = await supabase.from("profiles")
             .select("id,name,avatar_color").eq("id", msg.sender_id).single();
@@ -137,7 +137,12 @@ export default function ChatPage() {
     setSending(true);
     const content = input.trim();
     setInput("");
-    await supabase.from("messages").insert([{ item_id: itemId, sender_id: userId, content }]);
+    const { data: newMsg } = await supabase
+      .from("messages")
+      .insert([{ item_id: itemId, sender_id: userId, content }])
+      .select()
+      .single();
+    if (newMsg) setMessages(prev => [...prev, newMsg as Message]);
 
     // Trigger push notification to item reporter
     fetch("/api/send-push", {
