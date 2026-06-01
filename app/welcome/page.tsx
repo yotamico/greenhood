@@ -23,23 +23,34 @@ const PERSONAS: {
    Floating sticker
 ────────────────────────────────────────────────────────── */
 function FloatSticker({
-  emoji, color, style,
+  emoji, color,
+  top, right, bottom, left,
+  delay, visualRotation, orbitOrigin,
 }: {
-  emoji: string; color: string; style?: React.CSSProperties;
+  emoji: string; color: string;
+  top?: number; right?: number; bottom?: number; left?: number;
+  delay: string; visualRotation: string; orbitOrigin: string;
 }) {
   return (
     <div style={{
       position: "absolute",
       width: 56, height: 56,
-      background: color,
-      borderRadius: 14,
-      border: "2px solid var(--ink)",
-      boxShadow: "3px 3px 0 var(--shadow-ink)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      fontSize: 28,
-      animation: "floatY 2.8s ease-in-out infinite",
-      ...style,
-    }}>{emoji}</div>
+      top, right, bottom, left,
+      animation: "floatOrbit 2.8s ease-in-out infinite",
+      animationDelay: delay,
+      transformOrigin: orbitOrigin,
+    }}>
+      <div style={{
+        width: "100%", height: "100%",
+        background: color,
+        borderRadius: 14,
+        border: "2px solid var(--ink)",
+        boxShadow: "3px 3px 0 var(--shadow-ink)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 28,
+        transform: visualRotation,
+      }}>{emoji}</div>
+    </div>
   );
 }
 
@@ -81,10 +92,10 @@ function StepWelcome() {
           border: "2.5px solid var(--ink)",
           boxShadow: "5px 5px 0 var(--shadow-ink)",
         }} />
-        <FloatSticker emoji="🪑" color="var(--warning-tint)" style={{ top: 20,  right: -10, animationDelay: "0s",   transform: "rotate(-8deg)" }} />
-        <FloatSticker emoji="📚" color="var(--accent-tint)"  style={{ top: 50,  left: -8,   animationDelay: "0.4s", transform: "rotate(12deg)" }} />
-        <FloatSticker emoji="💡" color="var(--info-tint)"    style={{ bottom: 32, left: 10,  animationDelay: "0.8s", transform: "rotate(-15deg)" }} />
-        <FloatSticker emoji="🌿" color="var(--primary-light)" style={{ bottom: 12, right: 14, animationDelay: "1.2s", transform: "rotate(8deg)" }} />
+        <FloatSticker emoji="🪑" color="var(--warning-tint)" top={20}    right={-10} delay="0s"   visualRotation="rotate(-8deg)"  orbitOrigin="-74px 100px" />
+        <FloatSticker emoji="📚" color="var(--accent-tint)"  top={50}    left={-8}   delay="0.4s" visualRotation="rotate(12deg)"  orbitOrigin="128px 70px"  />
+        <FloatSticker emoji="💡" color="var(--info-tint)"    bottom={32} left={10}   delay="0.8s" visualRotation="rotate(-15deg)" orbitOrigin="110px -32px" />
+        <FloatSticker emoji="🌿" color="var(--primary-light)" bottom={12} right={14} delay="1.2s" visualRotation="rotate(8deg)"   orbitOrigin="-50px -52px" />
 
         {/* center pin */}
         <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}>
