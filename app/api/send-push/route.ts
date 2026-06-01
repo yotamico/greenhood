@@ -3,11 +3,11 @@ import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST(req: NextRequest) {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT!,
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!
-  );
+  const pubKey = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
+  const privKey = (process.env.VAPID_PRIVATE_KEY ?? "").trim();
+  const subject = (process.env.VAPID_SUBJECT ?? "").trim();
+  console.log("VAPID pub len:", pubKey.length, "priv len:", privKey.length, "subject:", subject);
+  webpush.setVapidDetails(subject, pubKey, privKey);
 
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
