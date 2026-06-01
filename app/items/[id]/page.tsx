@@ -476,21 +476,22 @@ export default function ItemDetailPage() {
               onClick={handleNavigate}
               disabled={navigating}
               style={{
-                flex:1, padding:"14px 0",
-                background: navigating ? "var(--paper-2)" : "var(--primary)",
-                color: navigating ? "var(--ink)" : "var(--paper)",
-                border:"2px solid var(--ink)", borderRadius:14,
-                fontFamily:"var(--font-sans)", fontWeight:900,
-                fontSize:15, cursor: navigating ? "not-allowed" : "pointer",
-                boxShadow:"3px 3px 0 var(--primary)",
+                flex:1, height:56,
+                background: navigating ? "var(--primary-tint)" : "var(--primary)",
+                color:"var(--ink)",
+                border:"2px solid var(--ink)", borderRadius:"var(--r-md)",
+                fontFamily:"var(--font-sans)", fontWeight:700,
+                fontSize:17, cursor: navigating ? "not-allowed" : "pointer",
+                boxShadow:"var(--sh-md)",
                 display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-                opacity: navigating ? 0.7 : 1,
+                opacity: navigating ? 0.55 : 1,
+                transition:"opacity 200ms, background 200ms",
               }}
             >
               {navigating ? "🔍 מאתר…" : (
                 <>
                   <svg width={18} height={18} viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                    stroke="var(--ink)" strokeWidth={2} strokeLinecap="round">
                     <polygon points="3 11 22 2 13 21 11 13 3 11"/>
                   </svg>
                   נווט אליי
