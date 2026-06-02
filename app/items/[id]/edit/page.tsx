@@ -31,8 +31,7 @@ export default function EditItemPage() {
   const [category,    setCategory]    = useState("furniture");
   const [condition,   setCondition]   = useState("good");
   const [address,     setAddress]     = useState("");
-  const [tagInput,    setTagInput]    = useState("");
-  const [tags,        setTags]        = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -55,12 +54,6 @@ export default function EditItemPage() {
     }
     load();
   }, [id, router]);
-
-  function addTag() {
-    const t = tagInput.trim();
-    if (t && !tags.includes(t)) setTags(prev => [...prev, t]);
-    setTagInput("");
-  }
 
   async function handleSave() {
     if (!title.trim() || !address.trim()) return;
@@ -211,23 +204,6 @@ export default function EditItemPage() {
                 boxShadow:"1px 1px 0 var(--shadow-ink)",
               }}>{t}</button>
             ))}
-          </div>
-          {/* Custom tags */}
-          {tags.filter(t => !PRESET_TAGS.includes(t)).length > 0 && (
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:8 }}>
-              {tags.filter(t => !PRESET_TAGS.includes(t)).map(t => (
-                <span key={t} style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"4px 10px", borderRadius:999, fontSize:12, fontWeight:700, background:"var(--surface)", border:"1.5px solid var(--ink)" }}>
-                  #{t}
-                  <button onClick={() => setTags(prev => prev.filter(x=>x!==t))} style={{ background:"none", border:"none", cursor:"pointer", padding:0, fontSize:14, lineHeight:1, color:"var(--muted)" }}>×</button>
-                </span>
-              ))}
-            </div>
-          )}
-          <div style={{ display:"flex", gap:8 }}>
-            <input value={tagInput} onChange={e => setTagInput(e.target.value)}
-              onKeyDown={e => { if (e.key==="Enter") { e.preventDefault(); addTag(); } }}
-              placeholder="תגית נוספת…" style={{ ...inputStyle, flex:1 }} />
-            <button onClick={addTag} style={{ padding:"0 16px", borderRadius:12, background:"var(--surface)", border:"2px solid var(--ink)", fontFamily:"var(--font-sans)", fontWeight:700, fontSize:14, cursor:"pointer", boxShadow:"var(--sh-sm)", whiteSpace:"nowrap" }}>+ הוסף</button>
           </div>
         </div>
 
