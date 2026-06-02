@@ -220,12 +220,10 @@ export default function ItemDetailPage() {
           </button>
           <div style={{ fontFamily:"var(--font-display)", fontWeight:900, fontSize:17, letterSpacing:"-0.01em" }}>פרטי פריט</div>
           <div style={{ display:"flex", gap:8 }}>
-            <button onClick={deleteItem} disabled={deleting} style={{ width:38, height:38, borderRadius:"50%", background:"var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
-              <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={1.75} strokeLinecap="round">
-                <polyline points="3 6 5 6 21 6"/>
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                <path d="M10 11v6M14 11v6"/>
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+            <button onClick={() => router.push(`/items/${id}/edit`)} style={{ width:38, height:38, borderRadius:"50%", background:"var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
+              <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
               </svg>
             </button>
             <button onClick={shareItem} style={{ width:38, height:38, borderRadius:"50%", background:"var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
