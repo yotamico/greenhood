@@ -81,6 +81,38 @@ export function TabBar() {
       const userId = session.user.id;
       fetchHasUnread(userId).then(setHasUnread);
 
+      // Silently register push subscription if permission already granted
+      if (
+        typeof window !== "undefined" &&
+        "serviceWorker" in navigator &&
+        "PushManager" in window &&
+        Notification.permission === "granted"
+      ) {
+        navigator.serviceWorker.register("/sw.js").then(async reg => {
+          try {
+            const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+            const padding = "=".repeat((4 - (vapidKey.length % 4)) % 4);
+            const raw = atob((vapidKey + padding).replace(/-/g, "+").replace(/_/g, "/"));
+            const key = Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+            const sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: key as unknown as ArrayBuffer,
+            });
+            let lat: number | null = null, lng: number | null = null;
+            try {
+              const pos = await new Promise<GeolocationPosition>((res, rej) =>
+                navigator.geolocation.getCurrentPosition(res, rej, { timeout: 4000 })
+              );
+              lat = pos.coords.latitude; lng = pos.coords.longitude;
+            } catch { /* optional */ }
+            await supabase.from("push_subscriptions").upsert(
+              { user_id: userId, endpoint: sub.endpoint, subscription: sub.toJSON(), lat, lng },
+              { onConflict: "user_id,endpoint" }
+            );
+          } catch { /* ignore */ }
+        }).catch(() => {});
+      }
+
       // Re-check when a new message arrives on any of my items
       const channel = supabase
         .channel("tabbar-messages")
