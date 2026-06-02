@@ -251,8 +251,15 @@ function StepPush({
         });
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
+          let lat: number | null = null, lng: number | null = null;
+          try {
+            const pos = await new Promise<GeolocationPosition>((res, rej) =>
+              navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
+            );
+            lat = pos.coords.latitude; lng = pos.coords.longitude;
+          } catch { /* optional */ }
           await supabase.from("push_subscriptions").upsert(
-            { user_id: session.user.id, endpoint: sub.endpoint, subscription: sub.toJSON() },
+            { user_id: session.user.id, endpoint: sub.endpoint, subscription: sub.toJSON(), lat, lng },
             { onConflict: "user_id,endpoint" }
           );
         }

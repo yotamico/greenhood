@@ -34,8 +34,16 @@ async function registerPush(userId: string) {
       applicationServerKey: urlBase64ToUint8Array(vapidKey) as unknown as ArrayBuffer,
     });
 
+    let lat: number | null = null, lng: number | null = null;
+    try {
+      const pos = await new Promise<GeolocationPosition>((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
+      );
+      lat = pos.coords.latitude; lng = pos.coords.longitude;
+    } catch { /* location optional */ }
+
     await supabase.from("push_subscriptions").upsert(
-      { user_id: userId, endpoint: sub.endpoint, subscription: sub.toJSON() },
+      { user_id: userId, endpoint: sub.endpoint, subscription: sub.toJSON(), lat, lng },
       { onConflict: "user_id,endpoint" }
     );
   } catch { /* permission denied or unsupported */ }
