@@ -457,7 +457,7 @@ export default function ItemDetailPage() {
           </button>
 
           {/* Primary action */}
-          {item.reporter_id === userId ? (
+          {item.reporter_id !== userId ? (
             <button
               onClick={markTaken}
               disabled={marking}
