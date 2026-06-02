@@ -277,7 +277,7 @@ function StepPush({
         אל תחמיץ שנייה
       </h2>
       <p style={{ fontSize: 14, color: "var(--muted)", fontWeight: 500, margin: "0 0 20px" }}>
-        נעדכן אותך כשחפץ יצא לרחוב – לפני כולם.
+        נעדכן אותך כשחפץ מהרשימה שלך יצא לרחוב — לפני כולם.
       </p>
 
       {/* notification preview */}
