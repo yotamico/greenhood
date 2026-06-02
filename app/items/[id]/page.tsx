@@ -204,6 +204,38 @@ export default function ItemDetailPage() {
         </div>
       )}
 
+      {/* ── Non-owner: sticky nav bar ── */}
+      {!isOwner && (
+        <div style={{
+          position:"sticky", top:0, zIndex:30,
+          display:"flex", justifyContent:"space-between", alignItems:"center",
+          padding:"12px 16px",
+          background:"rgba(245,242,232,0.95)", backdropFilter:"blur(8px)",
+          borderBottom:"1.5px solid var(--ink)",
+        }}>
+          <button onClick={() => router.back()} style={{ width:38, height:38, borderRadius:"50%", background:"var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+              <path d="M9 18l6-6-6-6"/>
+            </svg>
+          </button>
+          <div style={{ fontFamily:"var(--font-display)", fontWeight:900, fontSize:17, letterSpacing:"-0.01em" }}>פרטי פריט</div>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={toggleSave} style={{ width:38, height:38, borderRadius:"50%", background: saved ? "var(--accent-tint)" : "var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
+              <svg width={17} height={17} viewBox="0 0 24 24" fill={saved ? "var(--accent)" : "none"} stroke={saved ? "var(--accent)" : "currentColor"} strokeWidth={1.8} strokeLinecap="round">
+                <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>
+              </svg>
+            </button>
+            <button onClick={shareItem} style={{ width:38, height:38, borderRadius:"50%", background:"var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                <circle cx={18} cy={5} r={3}/><circle cx={6} cy={12} r={3}/><circle cx={18} cy={19} r={3}/>
+                <line x1={8.59} y1={13.51} x2={15.42} y2={17.49}/>
+                <line x1={15.41} y1={6.51} x2={8.59} y2={10.49}/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Owner: sticky nav bar (on app background) ── */}
       {isOwner && (
         <div style={{
@@ -248,33 +280,6 @@ export default function ItemDetailPage() {
         fontSize: primaryImg ? undefined : 96,
       }}>
         {!primaryImg && emoji}
-
-        {/* Non-owner: floating buttons */}
-        {!isOwner && (
-          <div style={{ position:"absolute", top:12, left:12, right:12, zIndex:3, display:"flex", justifyContent:"space-between" }}>
-            <button onClick={() => router.back()} style={floatBtn}>
-              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
-                <path d="M15 18l6-6-6-6"/>
-              </svg>
-            </button>
-            <div style={{ display:"flex", gap:8 }}>
-              <button onClick={shareItem} style={floatBtn}>
-                <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
-                  <circle cx={18} cy={5} r={3}/><circle cx={6} cy={12} r={3}/><circle cx={18} cy={19} r={3}/>
-                  <line x1={8.59} y1={13.51} x2={15.42} y2={17.49}/>
-                  <line x1={15.41} y1={6.51} x2={8.59} y2={10.49}/>
-                </svg>
-              </button>
-              <button onClick={toggleSave} style={{ ...floatBtn, background: saved ? "rgba(201,116,100,0.92)" : "rgba(245,242,232,0.92)" }}>
-                <svg width={17} height={17} viewBox="0 0 24 24"
-                  fill={saved ? "white" : "none"}
-                  stroke={saved ? "white" : "currentColor"} strokeWidth={1.8} strokeLinecap="round">
-                  <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Owner badge */}
         {isOwner && (
@@ -425,14 +430,6 @@ export default function ItemDetailPage() {
           </div>
         )}
 
-        {/* Photos (non-owner, tap to lightbox) */}
-        {!isOwner && images.length > 0 && primaryImg && (
-          <div style={{ marginTop:12 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={primaryImg.url} alt="" onClick={() => setLightboxUrl(primaryImg.url)}
-              style={{ width:"100%", borderRadius:14, border:"2px solid var(--ink)", cursor:"zoom-in", objectFit:"cover", maxHeight:200 }} />
-          </div>
-        )}
       </div>
 
       {/* ── Bottom bar ── */}
