@@ -204,6 +204,41 @@ export default function ItemDetailPage() {
         </div>
       )}
 
+      {/* ── Owner: sticky nav bar (on app background) ── */}
+      {isOwner && (
+        <div style={{
+          position:"sticky", top:0, zIndex:30,
+          display:"flex", justifyContent:"space-between", alignItems:"center",
+          padding:"12px 16px",
+          background:"rgba(245,242,232,0.95)", backdropFilter:"blur(8px)",
+          borderBottom:"1.5px solid var(--ink)",
+        }}>
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={shareItem} style={{ width:38, height:38, borderRadius:"50%", background:"var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                <circle cx={18} cy={5} r={3}/><circle cx={6} cy={12} r={3}/><circle cx={18} cy={19} r={3}/>
+                <line x1={8.59} y1={13.51} x2={15.42} y2={17.49}/>
+                <line x1={15.41} y1={6.51} x2={8.59} y2={10.49}/>
+              </svg>
+            </button>
+            <button onClick={deleteItem} disabled={deleting} style={{ width:38, height:38, borderRadius:"50%", background:"var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
+              <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={1.75} strokeLinecap="round">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6M14 11v6"/>
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+              </svg>
+            </button>
+          </div>
+          <div style={{ fontFamily:"var(--font-display)", fontWeight:900, fontSize:17, letterSpacing:"-0.01em" }}>פרטי פריט</div>
+          <button onClick={() => router.back()} style={{ width:38, height:38, borderRadius:"50%", background:"var(--surface)", border:"2px solid var(--ink)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-sm)" }}>
+            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+              <path d="M15 18l6-6-6-6"/>
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* ── Hero ── */}
       <div style={{
         position:"relative",
@@ -216,52 +251,32 @@ export default function ItemDetailPage() {
       }}>
         {!primaryImg && emoji}
 
-        {/* Floating control row */}
-        <div style={{ position:"absolute", top:12, left:12, right:12, zIndex:3, display:"flex", justifyContent:"space-between" }}>
-          <button onClick={() => router.back()} style={floatBtn}>
-            <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
-              <path d="M15 18l6-6-6-6"/>
-            </svg>
-          </button>
-          <div style={{ display:"flex", gap:8 }}>
-            {isOwner ? (
-              <>
-                <button onClick={shareItem} style={floatBtn}>
-                  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
-                    <circle cx={18} cy={5} r={3}/><circle cx={6} cy={12} r={3}/><circle cx={18} cy={19} r={3}/>
-                    <line x1={8.59} y1={13.51} x2={15.42} y2={17.49}/>
-                    <line x1={15.41} y1={6.51} x2={8.59} y2={10.49}/>
-                  </svg>
-                </button>
-                <button onClick={deleteItem} disabled={deleting} style={{ ...floatBtn, background:"rgba(201,116,100,0.92)" }}>
-                  <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.75} strokeLinecap="round">
-                    <polyline points="3 6 5 6 21 6"/>
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                    <path d="M10 11v6M14 11v6"/>
-                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
-                  </svg>
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={shareItem} style={floatBtn}>
-                  <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
-                    <circle cx={18} cy={5} r={3}/><circle cx={6} cy={12} r={3}/><circle cx={18} cy={19} r={3}/>
-                    <line x1={8.59} y1={13.51} x2={15.42} y2={17.49}/>
-                    <line x1={15.41} y1={6.51} x2={8.59} y2={10.49}/>
-                  </svg>
-                </button>
-                <button onClick={toggleSave} style={{ ...floatBtn, background: saved ? "rgba(201,116,100,0.92)" : "rgba(245,242,232,0.92)" }}>
-                  <svg width={17} height={17} viewBox="0 0 24 24"
-                    fill={saved ? "white" : "none"}
-                    stroke={saved ? "white" : "currentColor"} strokeWidth={1.8} strokeLinecap="round">
-                    <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>
-                  </svg>
-                </button>
-              </>
-            )}
+        {/* Non-owner: floating buttons */}
+        {!isOwner && (
+          <div style={{ position:"absolute", top:12, left:12, right:12, zIndex:3, display:"flex", justifyContent:"space-between" }}>
+            <button onClick={() => router.back()} style={floatBtn}>
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+                <path d="M15 18l6-6-6-6"/>
+              </svg>
+            </button>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={shareItem} style={floatBtn}>
+                <svg width={17} height={17} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round">
+                  <circle cx={18} cy={5} r={3}/><circle cx={6} cy={12} r={3}/><circle cx={18} cy={19} r={3}/>
+                  <line x1={8.59} y1={13.51} x2={15.42} y2={17.49}/>
+                  <line x1={15.41} y1={6.51} x2={8.59} y2={10.49}/>
+                </svg>
+              </button>
+              <button onClick={toggleSave} style={{ ...floatBtn, background: saved ? "rgba(201,116,100,0.92)" : "rgba(245,242,232,0.92)" }}>
+                <svg width={17} height={17} viewBox="0 0 24 24"
+                  fill={saved ? "white" : "none"}
+                  stroke={saved ? "white" : "currentColor"} strokeWidth={1.8} strokeLinecap="round">
+                  <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/>
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Owner badge */}
         {isOwner && (
@@ -440,12 +455,9 @@ export default function ItemDetailPage() {
                 </svg>
                 סמן כנלקח
               </button>
-              <button onClick={deleteItem} disabled={deleting} style={{ width:56, height:56, flexShrink:0, background:"var(--surface)", border:"2px solid var(--ink)", borderRadius:14, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-md)" }}>
-                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth={1.75} strokeLinecap="round">
-                  <polyline points="3 6 5 6 21 6"/>
-                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                  <path d="M10 11v6M14 11v6"/>
-                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+              <button onClick={() => router.push(`/chat/${id}`)} style={{ width:56, height:56, flexShrink:0, background:"var(--surface)", border:"2px solid var(--ink)", borderRadius:14, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, boxShadow:"var(--sh-md)" }}>
+                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--ink)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
               </button>
             </>
