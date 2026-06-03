@@ -737,22 +737,23 @@ function MapPageInner() {
           transition: dragging ? "none" : "top 320ms cubic-bezier(0.2,0.7,0.3,1)",
         }}
       >
-        {/* drag handle */}
+        {/* drag handle — large touch area */}
         <div
           onPointerDown={onDragStart}
           onPointerMove={onDragMove}
           onPointerUp={onDragEnd}
           onPointerCancel={onDragEnd}
           style={{
-            padding: "12px 0 8px",
+            padding: "18px 0 16px",
             cursor: dragging ? "grabbing" : "grab",
             touchAction: "none",
             userSelect: "none",
             flexShrink: 0,
+            width: "100%",
           }}
         >
           <div style={{
-            width: 48, height: 5, borderRadius: 3,
+            width: 56, height: 5, borderRadius: 3,
             background: dragging ? "var(--accent)" : "var(--ink)",
             margin: "0 auto",
             transition: "background 120ms",
