@@ -43,6 +43,7 @@ interface Item {
   lat: number | null;
   lng: number | null;
   pickup_day: string | null;
+  item_images: { url: string; is_primary: boolean; position: number }[];
 }
 
 function dayLabel(dateStr: string): string {
@@ -308,7 +309,7 @@ function MapPageInner() {
     if (!authed) return;
     supabase
       .from("items")
-      .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day")
+      .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day,item_images(url,is_primary,position)")
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(50)
@@ -839,6 +840,8 @@ function GHItemCard({ item }: { item: Item }) {
   const emoji = CAT_EMOJI[item.category] ?? "📦";
   const color = CAT_COLOR[item.category] ?? "var(--paper-2)";
   const age   = timeAgo(item.created_at);
+  const photos = item.item_images ?? [];
+  const primaryPhoto = photos.find(i => i.is_primary)?.url ?? photos[0]?.url ?? null;
 
   return (
     <button
@@ -855,14 +858,22 @@ function GHItemCard({ item }: { item: Item }) {
         fontFamily: "var(--font-sans)",
       }}
     >
-      {/* emoji thumb */}
-      <div style={{
-        width: 72, height: 72, borderRadius: 12,
-        background: color, border: "2px solid var(--ink)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 36, flexShrink: 0,
-        boxShadow: "var(--sh-sm)",
-      }}>{emoji}</div>
+      {/* thumbnail: real photo or category emoji */}
+      {primaryPhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={primaryPhoto} alt={item.title} style={{
+          width: 72, height: 72, borderRadius: 12, flexShrink: 0,
+          objectFit: "cover", border: "2px solid var(--ink)",
+          boxShadow: "var(--sh-sm)",
+        }} />
+      ) : (
+        <div style={{
+          width: 72, height: 72, borderRadius: 12,
+          background: color, border: "2px solid var(--ink)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 36, flexShrink: 0, boxShadow: "var(--sh-sm)",
+        }}>{emoji}</div>
+      )}
 
       {/* info */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
