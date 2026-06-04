@@ -59,6 +59,7 @@ interface Props {
   centerTrigger?:    number;
   clearanceRoute?:   [number,number][] | null;
   clearanceStreets?: [number,number][][];
+  navMode?: boolean;
 }
 
 /* Center on user — only fires when trigger increments (button click) */
@@ -86,9 +87,19 @@ function FitRoute({ route }: { route: [number,number][] }) {
   return null;
 }
 
+/* Continuously center on user during active navigation */
+function NavFollow({ pos }: { pos: [number,number] }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(pos, 17, { animate: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pos]);
+  return null;
+}
+
 const NES_ZIONA: [number,number] = [31.9297, 34.8307];
 
-export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, navDest, centerTrigger = 0, clearanceRoute, clearanceStreets }: Props) {
+export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, navDest, centerTrigger = 0, clearanceRoute, clearanceStreets, navMode = false }: Props) {
   const center = userPos ?? NES_ZIONA;
 
   /* ── user dot icon ── */
@@ -126,16 +137,19 @@ export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, na
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
       />
 
-      {/* Center on user only when button is pressed */}
-      <CenterOnUser pos={userPos} trigger={centerTrigger} />
+      {/* In nav mode: follow user continuously. Otherwise: center on button press only. */}
+      {navMode && userPos
+        ? <NavFollow pos={userPos} />
+        : <CenterOnUser pos={userPos} trigger={centerTrigger} />
+      }
 
       {/* User location dot */}
       {userPos && (
         <Marker position={userPos} icon={userIcon} />
       )}
 
-      {/* Item pins */}
-      {items
+      {/* Item pins — hidden during active navigation to reduce clutter */}
+      {!navMode && items
         .filter(it => it.lat != null && it.lng != null)
         .map(it => {
           const pin = CAT_PIN[it.category] ?? { emoji: "📦", bg: "#EDE6D2" };
@@ -172,7 +186,8 @@ export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, na
       {/* Navigation route */}
       {navRoute && navRoute.length > 1 && (
         <>
-          <FitRoute route={navRoute} />
+          {/* FitRoute only in non-nav mode — NavFollow owns the viewport during navigation */}
+          {!navMode && <FitRoute route={navRoute} />}
           {/* Shadow stroke */}
           <Polyline
             positions={navRoute}

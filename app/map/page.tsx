@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, Suspense } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -66,6 +66,41 @@ function snapTo(pct: number) {
 }
 
 interface NavDest { lat: number; lng: number; title: string; }
+
+interface OsrmStep {
+  name: string;
+  distance: number;
+  duration: number;
+  maneuver: {
+    type: string;
+    modifier?: string;
+    location: [number, number]; // [lng, lat]
+  };
+}
+
+function haversine([lat1, lng1]: [number,number], [lat2, lng2]: [number,number]): number {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function TurnArrow({ type, modifier }: { type?: string; modifier?: string }) {
+  if (type === "arrive") return <span style={{ fontSize: 32, lineHeight: 1 }}>🎯</span>;
+  const deg: Record<string, number> = {
+    "left": -90, "slight left": -45, "sharp left": -130,
+    "right": 90, "slight right": 45, "sharp right": 130,
+    "uturn": 180,
+  };
+  const rotation = deg[modifier ?? ""] ?? 0;
+  return (
+    <svg width={40} height={40} viewBox="0 0 40 40"
+      style={{ transform: `rotate(${rotation}deg)`, display: "block" }}>
+      <polygon points="20,4 32,34 20,26 8,34" fill="white" />
+    </svg>
+  );
+}
 
 function fmtDist(m: number) {
   return m < 1000 ? `${Math.round(m)} מ'` : `${(m / 1000).toFixed(1)} ק"מ`;
@@ -191,9 +226,13 @@ function MapPageInner() {
   const [streetCount,      setStreetCount]      = useState(0);
 
   /* navigation mode */
-  const [navDest,  setNavDest]  = useState<NavDest | null>(null);
-  const [navRoute, setNavRoute] = useState<[number,number][] | null>(null);
-  const [navInfo,  setNavInfo]  = useState<{ dist: number; dur: number } | null>(null);
+  const [navDest,        setNavDest]        = useState<NavDest | null>(null);
+  const [navRoute,       setNavRoute]       = useState<[number,number][] | null>(null);
+  const [navInfo,        setNavInfo]        = useState<{ dist: number; dur: number } | null>(null);
+  const [navSteps,       setNavSteps]       = useState<OsrmStep[]>([]);
+  const [currentStepIdx, setCurrentStepIdx] = useState(0);
+  const [heading,        setHeading]        = useState<number | null>(null);
+  const prevPosRef = useRef<[number,number] | null>(null);
   /* dedup ref — tracks which destination we already fetched a route for */
   const routeDestRef = useRef<string | null>(null);
   navDestRef.current = navDest;
@@ -253,9 +292,23 @@ function MapPageInner() {
   useEffect(() => {
     if (!navigator.geolocation) { setUserPos([31.9297, 34.8307]); return; }
     const id = navigator.geolocation.watchPosition(
-      pos => setUserPos([pos.coords.latitude, pos.coords.longitude]),
+      pos => {
+        const newPos: [number,number] = [pos.coords.latitude, pos.coords.longitude];
+        setUserPos(newPos);
+        if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
+          setHeading(pos.coords.heading);
+        } else if (prevPosRef.current) {
+          const [lat1, lng1] = prevPosRef.current;
+          const [lat2, lng2] = newPos;
+          const dx = lng2 - lng1, dy = lat2 - lat1;
+          if (Math.abs(dx) > 0.000005 || Math.abs(dy) > 0.000005) {
+            setHeading((Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360);
+          }
+        }
+        prevPosRef.current = newPos;
+      },
       () => setUserPos([31.9297, 34.8307]),
-      { enableHighAccuracy: true, maximumAge: 5000 },
+      { enableHighAccuracy: true, maximumAge: 3000 },
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
@@ -266,16 +319,20 @@ function MapPageInner() {
     const lng   = searchParams.get("nav_lng");
     const title = searchParams.get("nav_title") ?? "יעד";
     if (lat && lng) {
-      routeDestRef.current = null; // reset so the new dest gets a fresh fetch
+      routeDestRef.current = null;
       setNavRoute(null);
       setNavInfo(null);
+      setNavSteps([]);
+      setCurrentStepIdx(0);
       setNavDest({ lat: parseFloat(lat), lng: parseFloat(lng), title });
-      setSheetPct(HIDDEN); // collapse sheet to show full map
+      setSheetPct(HIDDEN);
     } else {
       routeDestRef.current = null;
       setNavDest(null);
       setNavRoute(null);
       setNavInfo(null);
+      setNavSteps([]);
+      setCurrentStepIdx(0);
     }
   }, [searchParams]);
 
@@ -289,7 +346,7 @@ function MapPageInner() {
 
     const [uLat, uLng] = userPos;
     fetch(
-      `https://router.project-osrm.org/route/v1/driving/${uLng},${uLat};${navDest.lng},${navDest.lat}?overview=full&geometries=geojson`
+      `https://router.project-osrm.org/route/v1/driving/${uLng},${uLat};${navDest.lng},${navDest.lat}?overview=full&geometries=geojson&steps=true`
     )
       .then(r => r.json())
       .then(d => {
@@ -300,9 +357,32 @@ function MapPageInner() {
         );
         setNavRoute(coords);
         setNavInfo({ dist: route.distance, dur: route.duration });
+        const steps: OsrmStep[] = route.legs?.[0]?.steps ?? [];
+        setNavSteps(steps);
+        // skip "depart" step — start at first real maneuver
+        const firstReal = steps.findIndex(s => s.maneuver.type !== "depart");
+        setCurrentStepIdx(firstReal > 0 ? firstReal : 0);
       })
       .catch(() => { routeDestRef.current = null; }); // allow retry on error
   }, [navDest, userPos]);
+
+  /* advance nav step when user reaches the maneuver point */
+  useEffect(() => {
+    if (!userPos || !navSteps.length || currentStepIdx >= navSteps.length) return;
+    const step = navSteps[currentStepIdx];
+    const stepPos: [number,number] = [step.maneuver.location[1], step.maneuver.location[0]];
+    if (haversine(userPos, stepPos) < 40) {
+      setCurrentStepIdx(i => Math.min(i + 1, navSteps.length - 1));
+    }
+  }, [userPos, navSteps, currentStepIdx]);
+
+  /* current nav step + distance to its maneuver point */
+  const currentStep = navSteps[currentStepIdx] ?? null;
+  const distToStep = useMemo(() => {
+    if (!userPos || !currentStep) return 0;
+    const stepPos: [number,number] = [currentStep.maneuver.location[1], currentStep.maneuver.location[0]];
+    return haversine(userPos, stepPos);
+  }, [userPos, currentStep]);
 
   /* fetch items */
   useEffect(() => {
@@ -385,17 +465,26 @@ function MapPageInner() {
       overflow: "hidden",
     }}>
       {/* ── MAP ── */}
-      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-        <GHMap
-          userPos={userPos}
-          items={items}
-          onItemClick={id => router.push(`/items/${id}`)}
-          navRoute={navRoute}
-          navDest={navDest}
-          centerTrigger={centerTrigger}
-          clearanceRoute={clearanceRoute}
-          clearanceStreets={clearanceStreets}
-        />
+      <div style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
+        <div style={{
+          height: "100%", width: "100%",
+          ...(navDest ? {
+            transform: `perspective(700px) rotateX(35deg)${heading != null ? ` rotateZ(${-heading}deg)` : ""}`,
+            transformOrigin: "50% 72%",
+          } : {}),
+        }}>
+          <GHMap
+            userPos={userPos}
+            items={items}
+            onItemClick={id => router.push(`/items/${id}`)}
+            navRoute={navRoute}
+            navDest={navDest}
+            centerTrigger={centerTrigger}
+            clearanceRoute={clearanceRoute}
+            clearanceStreets={clearanceStreets}
+            navMode={!!navDest}
+          />
+        </div>
       </div>
 
       {/* ── TOP BAR ── */}
@@ -404,37 +493,78 @@ function MapPageInner() {
         zIndex: 10,
       }}>
         {navDest ? (
-          /* ── Navigation banner ── */
+          /* ── Waze-style navigation banner ── */
           <div style={{
-            padding: "14px 16px",
-            background: "var(--ink)",
-            color: "var(--paper)",
-            display: "flex", alignItems: "center", gap: 12,
-            boxShadow: "0 4px 0 rgba(45,42,36,0.18)",
+            background: "#16213E",
+            color: "white",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+            direction: "rtl",
           }}>
-            <div style={{ fontSize: 26 }}>🧭</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Main instruction row */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 12,
+              padding: "12px 16px 8px",
+            }}>
+              {/* Turn arrow box */}
               <div style={{
-                fontFamily: "var(--font-display)", fontWeight: 900,
-                fontSize: 15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-              }}>{navDest.title}</div>
-              <div style={{ fontSize: 12, opacity: 0.7, marginTop: 2 }}>
+                width: 58, height: 58, flexShrink: 0,
+                background: "rgba(255,255,255,0.1)",
+                borderRadius: 14,
+                border: "1.5px solid rgba(255,255,255,0.2)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <TurnArrow
+                  type={currentStep?.maneuver.type}
+                  modifier={currentStep?.maneuver.modifier}
+                />
+              </div>
+              {/* Distance + street name */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 30, fontWeight: 900, lineHeight: 1,
+                  fontFamily: "var(--font-display)",
+                }}>
+                  {currentStep ? fmtDist(distToStep) : (navRoute ? "ממשיך…" : "מחשב…")}
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 600, marginTop: 4,
+                  opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                }}>
+                  {currentStep?.name || navDest.title}
+                </div>
+              </div>
+              {/* Cancel button */}
+              <button
+                onClick={() => {
+                  setNavDest(null); setNavRoute(null); setNavInfo(null);
+                  setNavSteps([]); setCurrentStepIdx(0);
+                  router.replace("/map");
+                }}
+                style={{
+                  padding: "8px 14px", borderRadius: 10, flexShrink: 0,
+                  background: "rgba(255,255,255,0.12)",
+                  border: "1.5px solid rgba(255,255,255,0.3)",
+                  color: "white", cursor: "pointer",
+                  fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
+                }}
+              >✕ בטל</button>
+            </div>
+            {/* Secondary row — total distance + duration + destination name */}
+            <div style={{
+              padding: "6px 16px 10px",
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              borderTop: "1px solid rgba(255,255,255,0.1)",
+              fontSize: 12, opacity: 0.65,
+            }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "55%" }}>
+                {navDest.title}
+              </span>
+              <span style={{ flexShrink: 0 }}>
                 {navInfo
                   ? `${fmtDist(navInfo.dist)} · ${fmtDur(navInfo.dur)}`
-                  : navRoute ? "מסלול מוצג" : "מחשב מסלול…"}
-              </div>
+                  : "מחשב מסלול…"}
+              </span>
             </div>
-            <button
-              onClick={() => { setNavDest(null); setNavRoute(null); setNavInfo(null); router.replace("/map"); }}
-              style={{
-                padding: "8px 14px", borderRadius: 10,
-                background: "rgba(255,255,255,0.15)",
-                border: "1.5px solid rgba(255,255,255,0.35)",
-                color: "var(--paper)", cursor: "pointer",
-                fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
-                flexShrink: 0,
-              }}
-            >✕ בטל</button>
           </div>
         ) : (
           /* ── Normal search + filter bar ── */
