@@ -6,6 +6,14 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 /* CARTO positron vector style — same visual language as the existing tiles, free */
 const CARTO_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+
+/* RTL text support for Hebrew/Arabic street labels — loaded once */
+try {
+  maplibregl.setRTLTextPlugin(
+    "https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.3.0/mapbox-gl-rtl-text.min.js",
+    true,
+  );
+} catch { /* already registered */ }
 const NES_ZIONA: maplibregl.LngLatLike = [34.8307, 31.9297];
 
 const CAT_PIN: Record<string, { emoji: string; bg: string }> = {
