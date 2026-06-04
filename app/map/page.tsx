@@ -466,12 +466,16 @@ function MapPageInner() {
     }}>
       {/* ── MAP ── */}
       <div style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
-        <div style={{
+        {/* In nav mode: extend the map div above + to the sides so perspective tilt
+            fills the full screen (without extension the rotated top shows blank).
+            Outer overflow:hidden clips the excess at screen edges. */}
+        <div style={navDest ? {
+          position: "absolute",
+          top: "-22%", left: "-30%", right: "-30%", bottom: 0,
+          transform: `perspective(2000px) rotateX(30deg)${heading != null ? ` rotateZ(${-heading}deg)` : ""}`,
+          transformOrigin: "50% 76%",
+        } : {
           height: "100%", width: "100%",
-          ...(navDest ? {
-            transform: `perspective(700px) rotateX(35deg)${heading != null ? ` rotateZ(${-heading}deg)` : ""}`,
-            transformOrigin: "50% 72%",
-          } : {}),
         }}>
           <GHMap
             userPos={userPos}
@@ -483,6 +487,7 @@ function MapPageInner() {
             clearanceRoute={clearanceRoute}
             clearanceStreets={clearanceStreets}
             navMode={!!navDest}
+            heading={heading}
           />
         </div>
       </div>

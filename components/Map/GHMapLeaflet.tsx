@@ -60,6 +60,7 @@ interface Props {
   clearanceRoute?:   [number,number][] | null;
   clearanceStreets?: [number,number][][];
   navMode?: boolean;
+  heading?: number | null;
 }
 
 /* Center on user — only fires when trigger increments (button click) */
@@ -87,19 +88,27 @@ function FitRoute({ route }: { route: [number,number][] }) {
   return null;
 }
 
-/* Continuously center on user during active navigation */
-function NavFollow({ pos }: { pos: [number,number] }) {
+/* Continuously center on user during active navigation.
+   Looks 150 m ahead so the user dot appears in the lower third of the tilted view. */
+function NavFollow({ pos, heading }: { pos: [number,number]; heading: number | null }) {
   const map = useMap();
   useEffect(() => {
-    map.setView(pos, 17, { animate: false });
+    let [lat, lng] = pos;
+    if (heading != null) {
+      const aheadM = 150;
+      const rad = heading * Math.PI / 180;
+      lat += (aheadM / 111320) * Math.cos(rad);
+      lng += (aheadM / (111320 * Math.cos(pos[0] * Math.PI / 180))) * Math.sin(rad);
+    }
+    map.setView([lat, lng], 17, { animate: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pos]);
+  }, [pos, heading]);
   return null;
 }
 
 const NES_ZIONA: [number,number] = [31.9297, 34.8307];
 
-export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, navDest, centerTrigger = 0, clearanceRoute, clearanceStreets, navMode = false }: Props) {
+export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, navDest, centerTrigger = 0, clearanceRoute, clearanceStreets, navMode = false, heading = null }: Props) {
   const center = userPos ?? NES_ZIONA;
 
   /* ── user dot icon ── */
@@ -139,7 +148,7 @@ export default function GHMapLeaflet({ userPos, items, onItemClick, navRoute, na
 
       {/* In nav mode: follow user continuously. Otherwise: center on button press only. */}
       {navMode && userPos
-        ? <NavFollow pos={userPos} />
+        ? <NavFollow pos={userPos} heading={heading} />
         : <CenterOnUser pos={userPos} trigger={centerTrigger} />
       }
 
