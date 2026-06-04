@@ -7,7 +7,13 @@ import "maplibre-gl/dist/maplibre-gl.css";
 /* CARTO positron vector style — same visual language as the existing tiles, free */
 const CARTO_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
 
-/* MapLibre v4+ has built-in RTL support — no external plugin needed */
+/* RTL text plugin — exact URL from MapLibre v5 official docs */
+try {
+  maplibregl.setRTLTextPlugin(
+    "https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.3.0/dist/mapbox-gl-rtl-text.js",
+    false,
+  );
+} catch { /* already registered */ }
 const NES_ZIONA: maplibregl.LngLatLike = [34.8307, 31.9297];
 
 const CAT_PIN: Record<string, { emoji: string; bg: string }> = {
