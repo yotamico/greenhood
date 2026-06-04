@@ -6,8 +6,8 @@ import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
 
-/* ── dynamic import — Leaflet needs window ── */
-const GHMap = dynamic(() => import("@/components/Map/GHMapLeaflet"), {
+/* ── dynamic import — MapLibre needs window ── */
+const GHMap = dynamic(() => import("@/components/Map/GHMapLibre"), {
   ssr: false,
   loading: () => (
     <div style={{
@@ -464,32 +464,20 @@ function MapPageInner() {
       fontFamily: "var(--font-sans)",
       overflow: "hidden",
     }}>
-      {/* ── MAP ── */}
-      <div style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden" }}>
-        {/* In nav mode: extend the map div above + to the sides so perspective tilt
-            fills the full screen (without extension the rotated top shows blank).
-            Outer overflow:hidden clips the excess at screen edges. */}
-        <div style={navDest ? {
-          position: "absolute",
-          top: "-22%", left: "-30%", right: "-30%", bottom: 0,
-          transform: `perspective(2000px) rotateX(30deg)${heading != null ? ` rotateZ(${-heading}deg)` : ""}`,
-          transformOrigin: "50% 76%",
-        } : {
-          height: "100%", width: "100%",
-        }}>
-          <GHMap
-            userPos={userPos}
-            items={items}
-            onItemClick={id => router.push(`/items/${id}`)}
-            navRoute={navRoute}
-            navDest={navDest}
-            centerTrigger={centerTrigger}
-            clearanceRoute={clearanceRoute}
-            clearanceStreets={clearanceStreets}
-            navMode={!!navDest}
-            heading={heading}
-          />
-        </div>
+      {/* ── MAP — pitch + bearing handled natively by MapLibre ── */}
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+        <GHMap
+          userPos={userPos}
+          items={items}
+          onItemClick={id => router.push(`/items/${id}`)}
+          navRoute={navRoute}
+          navDest={navDest}
+          centerTrigger={centerTrigger}
+          clearanceRoute={clearanceRoute}
+          clearanceStreets={clearanceStreets}
+          navMode={!!navDest}
+          heading={heading}
+        />
       </div>
 
       {/* ── TOP BAR ── */}

@@ -1,0 +1,251 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+
+/* CARTO positron vector style — same visual language as the existing tiles, free */
+const CARTO_STYLE = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const NES_ZIONA: maplibregl.LngLatLike = [34.8307, 31.9297];
+
+const CAT_PIN: Record<string, { emoji: string; bg: string }> = {
+  furniture:   { emoji: "🪑", bg: "#F0DBC0" },
+  books:       { emoji: "📚", bg: "#C9D8E2" },
+  lighting:    { emoji: "💡", bg: "#F0D5CB" },
+  plants:      { emoji: "🌿", bg: "#A8C496" },
+  sports:      { emoji: "⚽", bg: "#C9D8E2" },
+  electronics: { emoji: "📺", bg: "#EDE6D2" },
+  kitchen:     { emoji: "🍳", bg: "#F0DBC0" },
+  kids:        { emoji: "🧸", bg: "#F0D5CB" },
+};
+
+function makePinEl(emoji: string, bg: string): HTMLElement {
+  const el = document.createElement("div");
+  el.style.cssText = `
+    width:36px;height:36px;
+    background:${bg};border:2px solid #2D2A24;
+    border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+    box-shadow:2px 2px 0 rgba(45,42,36,0.18);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+  `;
+  const span = document.createElement("span");
+  span.style.cssText = "transform:rotate(45deg);font-size:16px;line-height:1;";
+  span.textContent = emoji;
+  el.appendChild(span);
+  return el;
+}
+
+function toLineGeoJSON(coords: [number, number][]) {
+  return {
+    type: "Feature" as const,
+    properties: {},
+    geometry: {
+      type: "LineString" as const,
+      coordinates: coords.map(([lat, lng]) => [lng, lat]),
+    },
+  };
+}
+
+interface Item {
+  id: string; title: string; category: string;
+  lat: number | null; lng: number | null;
+}
+interface NavDest { lat: number; lng: number; title: string; }
+
+interface Props {
+  userPos:           [number, number] | null;
+  items:             Item[];
+  onItemClick?:      (id: string) => void;
+  navRoute?:         [number, number][] | null;
+  navDest?:          NavDest | null;
+  centerTrigger?:    number;
+  clearanceRoute?:   [number, number][];
+  clearanceStreets?: [number, number][][];
+  navMode?:          boolean;
+  heading?:          number | null;
+}
+
+export default function GHMapLibre({
+  userPos, items, onItemClick,
+  navRoute, navDest,
+  centerTrigger = 0,
+  clearanceRoute, clearanceStreets,
+  navMode = false,
+  heading = null,
+}: Props) {
+  const containerRef       = useRef<HTMLDivElement>(null);
+  const mapRef             = useRef<maplibregl.Map | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const userMarkerRef      = useRef<maplibregl.Marker | null>(null);
+  const destMarkerRef      = useRef<maplibregl.Marker | null>(null);
+  const itemMarkersRef     = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const prevTriggerRef     = useRef(0);
+
+  /* ── init ── */
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: CARTO_STYLE,
+      center: userPos ? [userPos[1], userPos[0]] : NES_ZIONA,
+      zoom: 15,
+      pitch: 0,
+      bearing: 0,
+      attributionControl: false,
+    });
+    mapRef.current = map;
+
+    map.on("load", () => {
+      /* navigation route */
+      map.addSource("nav-route", { type: "geojson", data: toLineGeoJSON([]) });
+      map.addLayer({ id: "nav-route-shadow", type: "line", source: "nav-route",
+        paint: { "line-color": "#2D2A24", "line-width": 10, "line-opacity": 0.15 } });
+      map.addLayer({ id: "nav-route-line",   type: "line", source: "nav-route",
+        paint: { "line-color": "#6B9956",   "line-width": 6,  "line-opacity": 0.95 } });
+
+      /* clearance route (item-based) */
+      map.addSource("clearance-route", { type: "geojson", data: toLineGeoJSON([]) });
+      map.addLayer({ id: "clearance-route-line", type: "line", source: "clearance-route",
+        paint: { "line-color": "#C94B1F", "line-width": 4, "line-opacity": 0.85,
+                 "line-dasharray": [4, 3] } });
+
+      /* clearance streets (OSM-based) */
+      map.addSource("clearance-streets", {
+        type: "geojson", data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({ id: "clearance-streets-line", type: "line", source: "clearance-streets",
+        paint: { "line-color": "#C94B1F", "line-width": 6, "line-opacity": 0.9,
+                 "line-dasharray": [5, 3] } });
+
+      setMapLoaded(true);
+    });
+
+    return () => {
+      itemMarkersRef.current.forEach(m => m.remove());
+      itemMarkersRef.current.clear();
+      userMarkerRef.current?.remove();
+      destMarkerRef.current?.remove();
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []); // eslint-disable-line
+
+  /* ── pitch + bearing (nav mode) ── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+    if (navMode) {
+      map.easeTo({ pitch: 50, bearing: -(heading ?? 0), duration: 400 });
+    } else {
+      map.easeTo({ pitch: 0, bearing: 0, duration: 500 });
+    }
+  }, [navMode, heading, mapLoaded]);
+
+  /* ── follow user during navigation (center 150 m ahead) ── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !userPos || !navMode) return;
+    let [lat, lng] = userPos;
+    if (heading != null) {
+      const rad = heading * Math.PI / 180;
+      lat += (150 / 111320) * Math.cos(rad);
+      lng += (150 / (111320 * Math.cos(userPos[0] * Math.PI / 180))) * Math.sin(rad);
+    }
+    map.easeTo({ center: [lng, lat], zoom: 17, duration: 200 });
+  }, [userPos, navMode, heading, mapLoaded]);
+
+  /* ── center on user (locate-me button) ── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !userPos) return;
+    if (centerTrigger === 0 || centerTrigger === prevTriggerRef.current) return;
+    prevTriggerRef.current = centerTrigger;
+    map.flyTo({ center: [userPos[1], userPos[0]], zoom: 16, duration: 1100 });
+  }, [centerTrigger, userPos, mapLoaded]);
+
+  /* ── user dot ── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !userPos) return;
+    const lngLat: maplibregl.LngLatLike = [userPos[1], userPos[0]];
+    if (!userMarkerRef.current) {
+      const el = document.createElement("div");
+      el.innerHTML = `
+        <div style="position:relative;width:22px;height:22px;">
+          <div style="position:absolute;inset:0;border-radius:50%;background:#6B8FA8;
+            opacity:0.25;animation:ghPulse 2s ease-out infinite;transform-origin:center;"></div>
+          <div style="position:absolute;inset:2px;border-radius:50%;background:#6B8FA8;
+            border:2.5px solid #2D2A24;box-shadow:0 0 0 3px white;"></div>
+        </div>`;
+      userMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat(lngLat).addTo(map);
+    } else {
+      userMarkerRef.current.setLngLat(lngLat);
+    }
+  }, [userPos]);
+
+  /* ── destination pin ── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    destMarkerRef.current?.remove();
+    destMarkerRef.current = null;
+    if (!navDest) return;
+    destMarkerRef.current = new maplibregl.Marker({ element: makePinEl("🎯", "#FFB347"), anchor: "bottom" })
+      .setLngLat([navDest.lng, navDest.lat]).addTo(map);
+  }, [navDest]);
+
+  /* ── item pins ── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const existing = itemMarkersRef.current;
+    const newIds = new Set(items.map(it => it.id));
+
+    existing.forEach((m, id) => { if (!newIds.has(id)) { m.remove(); existing.delete(id); } });
+
+    if (navMode) { existing.forEach(m => m.remove()); existing.clear(); return; }
+
+    items
+      .filter(it => it.lat != null && it.lng != null && !existing.has(it.id))
+      .forEach(it => {
+        const pin = CAT_PIN[it.category] ?? { emoji: "📦", bg: "#EDE6D2" };
+        const el = makePinEl(pin.emoji, pin.bg);
+        if (onItemClick) el.addEventListener("click", () => onItemClick(it.id));
+        existing.set(it.id,
+          new maplibregl.Marker({ element: el, anchor: "bottom" })
+            .setLngLat([it.lng!, it.lat!]).addTo(map)
+        );
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, navMode]);
+
+  /* ── nav route ── */
+  useEffect(() => {
+    if (!mapLoaded) return;
+    (mapRef.current?.getSource("nav-route") as maplibregl.GeoJSONSource | undefined)
+      ?.setData(toLineGeoJSON(navRoute ?? []));
+  }, [navRoute, mapLoaded]);
+
+  /* ── clearance route ── */
+  useEffect(() => {
+    if (!mapLoaded) return;
+    (mapRef.current?.getSource("clearance-route") as maplibregl.GeoJSONSource | undefined)
+      ?.setData(toLineGeoJSON(clearanceRoute ?? []));
+  }, [clearanceRoute, mapLoaded]);
+
+  /* ── clearance streets ── */
+  useEffect(() => {
+    if (!mapLoaded) return;
+    const features = (clearanceStreets ?? [])
+      .filter(s => s.length > 1)
+      .map(s => ({
+        type: "Feature" as const, properties: {},
+        geometry: { type: "LineString" as const, coordinates: s.map(([lat, lng]) => [lng, lat]) },
+      }));
+    (mapRef.current?.getSource("clearance-streets") as maplibregl.GeoJSONSource | undefined)
+      ?.setData({ type: "FeatureCollection", features });
+  }, [clearanceStreets, mapLoaded]);
+
+  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
+}
