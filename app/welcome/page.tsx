@@ -378,7 +378,7 @@ function StepLocation({
   }
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
       <h2 style={{
         fontFamily: "var(--font-display)",
         fontSize: 30, fontWeight: 900, lineHeight: 1.1,
@@ -390,15 +390,15 @@ function StepLocation({
         כדי להציג מציאות קרובות. לא נשמור ללא רשות.
       </p>
 
-      {/* Mini map preview */}
+      {/* Map container — flex:1 fills remaining space, button floats inside */}
       <div style={{
-        height: 190,
+        flex: 1, minHeight: 160,
         background: "var(--paper-2)",
         borderRadius: 16,
         border: "2px solid var(--ink)",
         boxShadow: "4px 4px 0 var(--shadow-ink)",
         overflow: "hidden",
-        marginBottom: 20,
+        marginBottom: 12,
         position: "relative",
       }}>
         {/* grid */}
@@ -410,68 +410,74 @@ function StepLocation({
           `,
           backgroundSize: "28px 28px",
         }} />
-        <svg width="100%" height="100%" viewBox="0 0 380 190" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0 }}>
-          <g stroke="var(--paper)" strokeWidth="14" fill="none" strokeLinecap="round">
-            <path d="M-10,70 Q120,65 200,80 T390,75" />
-            <path d="M130,-10 Q135,90 125,200" />
-            <path d="M260,-10 Q255,95 265,200" />
+        {/* roads + buildings */}
+        <svg width="100%" height="100%" viewBox="0 0 360 400" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0 }} aria-hidden="true">
+          <g stroke="white" strokeWidth="22" fill="none" strokeLinecap="round">
+            <path d="M-10,120 Q100,110 200,130 T370,120" />
+            <path d="M140,-10 Q137,130 128,410" />
+            <path d="M260,-10 Q263,130 266,410" />
+            <path d="M-10,260 Q100,253 210,268 T370,258" />
           </g>
-          <g stroke="var(--ink)" strokeWidth="1" fill="none" opacity="0.4">
-            <path d="M-10,70 Q120,65 200,80 T390,75" />
-            <path d="M130,-10 Q135,90 125,200" />
-            <path d="M260,-10 Q255,95 265,200" />
+          <g stroke="rgba(45,42,36,0.15)" strokeWidth="1" fill="none">
+            <path d="M-10,120 Q100,110 200,130 T370,120" />
+            <path d="M140,-10 Q137,130 128,410" />
+            <path d="M260,-10 Q263,130 266,410" />
+            <path d="M-10,260 Q100,253 210,268 T370,258" />
           </g>
-          <rect x="20" y="15" width="65" height="40" rx="8" fill="var(--primary-tint)" stroke="var(--ink)" strokeWidth="1.5" />
+          <rect x="22" y="22" width="90" height="66" rx="9" fill="#DDE7CC" stroke="rgba(45,42,36,0.15)" strokeWidth="1.5" />
+          <rect x="162" y="148" width="70" height="54" rx="8" fill="#F5F2E8" stroke="rgba(45,42,36,0.12)" strokeWidth="1.5" />
+          <rect x="280" y="28" width="62" height="52" rx="8" fill="#DDE7CC" stroke="rgba(45,42,36,0.12)" strokeWidth="1.5" />
+          <rect x="22" y="285" width="96" height="60" rx="9" fill="#DDE7CC" stroke="rgba(45,42,36,0.12)" strokeWidth="1.5" />
+          <rect x="172" y="280" width="68" height="50" rx="8" fill="#F5F2E8" stroke="rgba(45,42,36,0.12)" strokeWidth="1.5" />
         </svg>
 
-        {/* pins */}
-        <div style={{ position: "absolute", top: 75, right: 95, fontSize: 22 }}>📍</div>
-        <div style={{ position: "absolute", top: 50, right: 180, fontSize: 18 }}>📦</div>
+        {/* found item */}
+        <div style={{ position: "absolute", top: "32%", left: "48%", fontSize: 30,
+          filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.15))" }}>📦</div>
 
-        {/* me dot */}
-        <div style={{
-          position: "absolute", top: 115, right: 155,
-          width: 14, height: 14, borderRadius: "50%",
-          background: "var(--info)", border: "2.5px solid var(--ink)",
-          boxShadow: "0 0 0 3px white",
-        }} />
+        {/* user location dot */}
+        <div style={{ position: "absolute", top: "50%", left: "64%", transform: "translate(-50%,-50%)" }}>
+          <div style={{ width: 14, height: 14, borderRadius: "50%",
+            background: "#E05A45", border: "2.5px solid white",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.3)" }} />
+          <div style={{ position: "absolute", bottom: -7, left: "50%", transform: "translateX(-50%)",
+            width: 2, height: 7, background: "#E05A45", borderRadius: 1 }} />
+        </div>
 
-        {/* address label */}
+        {/* address pill — above the button */}
         <div style={{
-          position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)",
+          position: "absolute", bottom: 72, left: 10, right: 10,
+          textAlign: "center", fontSize: 12, color: "var(--ink)", fontWeight: 700,
           background: "var(--surface)", borderRadius: 999,
-          border: "1.5px solid var(--ink)",
-          padding: "6px 14px",
-          fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+          border: "1.5px solid var(--ink)", padding: "6px 12px",
         }}>
-          📍 רחוב הרצל, רמת גן • 12 חפצים פעילים
+          📍 רחוב הרצל, רמת גן · 12 חפצים פעילים
+        </div>
+
+        {/* allow button — floats inside map at bottom */}
+        <div style={{ position: "absolute", bottom: 12, left: 12, right: 12 }}>
+          <button
+            onClick={requestLocation}
+            style={{
+              width: "100%", height: 48,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              background: locGranted ? "var(--primary-tint)" : "var(--primary)",
+              color: "var(--ink)",
+              border: "2px solid var(--ink)", borderRadius: 12,
+              fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 15,
+              cursor: "pointer", boxShadow: "3px 3px 0 var(--shadow-ink)",
+            }}
+          >
+            {locGranted ? <>✓ גישה אושרה</> : <>📍 אפשר גישה</>}
+          </button>
         </div>
       </div>
 
-      {/* simple permission button */}
-      <button
-        onClick={requestLocation}
-        style={{
-          width: "100%", height: 52,
-          background: locGranted ? "var(--primary-light)" : "var(--primary)",
-          color: "var(--ink)",
-          border: "2px solid var(--ink)",
-          borderRadius: "var(--r-md)",
-          fontFamily: "var(--font-sans)",
-          fontWeight: 700, fontSize: 15,
-          cursor: "pointer",
-          boxShadow: "var(--sh-md)",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          marginBottom: 12,
-        }}
-      >
-        {locGranted ? "✅ מיקום אושר" : "📍 אפשר גישה"}
-      </button>
-
+      {/* skip button — outside map */}
       <button
         onClick={() => setLocGranted(true)}
         style={{
-          width: "100%", padding: "12px",
+          width: "100%", padding: "12px", marginBottom: 8,
           background: "transparent",
           border: "1.5px dashed var(--ink)",
           borderRadius: 12,
