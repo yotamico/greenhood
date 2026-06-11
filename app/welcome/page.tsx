@@ -651,7 +651,7 @@ function WelcomePageInner() {
       {/* CTA */}
       <div style={{
         padding: "16px 20px 32px",
-        background: "var(--surface)",
+        background: "var(--paper)",
         flexShrink: 0,
       }}>
         {saveError && (
