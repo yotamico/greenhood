@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -512,12 +512,26 @@ function StepLocation({
 ────────────────────────────────────────────────────────── */
 export default function WelcomePage() {
   const router = useRouter();
+  const [guardDone, setGuardDone] = useState(false);
   const [step, setStep]           = useState(0);
   const [personas, setPersonas]   = useState<Persona[]>([]);
   const [locGranted, setLocGranted] = useState(false);
   const [pushGranted, setPushGranted] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  /* Guard: skip onboarding if already done, redirect to login if not authed */
+  useEffect(() => {
+    async function guard() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.replace("/login"); return; }
+      const { data: profile } = await supabase
+        .from("profiles").select("onboarded").eq("id", user.id).single();
+      if (profile?.onboarded) { router.replace("/map"); return; }
+      setGuardDone(true);
+    }
+    guard();
+  }, [router]);
 
   const TOTAL = 4;
 
@@ -553,6 +567,23 @@ export default function WelcomePage() {
     step === 1 ? (personas.length > 0 ? `המשך עם ${personas.length} בחירות ←` : "המשך ←") :
     step === 2 ? "המשך ←" :
     saving ? "שומר…" : "סיים והיכנס ✓";
+
+  if (!guardDone) return (
+    <div style={{
+      minHeight: "100dvh", background: "var(--paper)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      flexDirection: "column", gap: 16, fontFamily: "var(--font-sans)",
+    }}>
+      <div style={{
+        width: 56, height: 56, borderRadius: "50%",
+        background: "var(--primary)", border: "2px solid var(--ink)",
+        boxShadow: "3px 3px 0 var(--shadow-ink)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 28, animation: "floatY 1.4s ease-in-out infinite",
+      }}>🌿</div>
+      <p style={{ color: "var(--muted)", fontWeight: 600, fontSize: 15 }}>טוען…</p>
+    </div>
+  );
 
   return (
     <div style={{
