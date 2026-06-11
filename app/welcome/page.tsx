@@ -648,7 +648,6 @@ export default function WelcomePage() {
       <div style={{
         padding: "16px 20px 32px",
         background: "var(--surface)",
-        borderTop: "2px solid var(--ink)",
         flexShrink: 0,
       }}>
         {saveError && (
