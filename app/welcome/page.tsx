@@ -422,7 +422,6 @@ function StepLocation({
             <path d="M260,-10 Q255,95 265,200" />
           </g>
           <rect x="20" y="15" width="65" height="40" rx="8" fill="var(--primary-tint)" stroke="var(--ink)" strokeWidth="1.5" />
-          <rect x="158" y="100" width="55" height="50" rx="8" fill="var(--surface)" stroke="var(--ink)" strokeWidth="1.5" />
         </svg>
 
         {/* pins */}
@@ -430,16 +429,14 @@ function StepLocation({
         <div style={{ position: "absolute", top: 50, right: 180, fontSize: 18 }}>📦</div>
 
         {/* me dot */}
-        {locGranted && (
-          <div style={{
-            position: "absolute", top: 115, right: 155,
-            width: 14, height: 14, borderRadius: "50%",
-            background: "var(--info)", border: "2.5px solid var(--ink)",
-            boxShadow: "0 0 0 3px white",
-          }} />
-        )}
+        <div style={{
+          position: "absolute", top: 115, right: 155,
+          width: 14, height: 14, borderRadius: "50%",
+          background: "var(--info)", border: "2.5px solid var(--ink)",
+          boxShadow: "0 0 0 3px white",
+        }} />
 
-        {/* label */}
+        {/* address label */}
         <div style={{
           position: "absolute", bottom: 10, left: "50%", transform: "translateX(-50%)",
           background: "var(--surface)", borderRadius: 999,
@@ -447,48 +444,29 @@ function StepLocation({
           padding: "6px 14px",
           fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
         }}>
-          {locGranted ? "✅ מיקום הופעל" : "📍 לחץ/י כדי להפעיל"}
+          📍 רחוב הרצל, רמת גן • 12 חפצים פעילים
         </div>
       </div>
 
-      {/* permission card */}
-      <div style={{
-        background: "var(--primary-tint)", borderRadius: 16,
-        border: "2px solid var(--ink)", boxShadow: "3px 3px 0 var(--shadow-ink)",
-        padding: 16, marginBottom: 12,
-      }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "start", marginBottom: 14 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 12,
-            background: "var(--primary)", border: "2px solid var(--ink)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 20, flexShrink: 0,
-          }}>📍</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 3 }}>גישה למיקום</div>
-            <div style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.5, fontWeight: 500 }}>
-              כדי להציג מציאות בקרבתך ולנווט אליהן. תמיד ניתן לבטל.
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={requestLocation}
-          style={{
-            width: "100%", height: 48,
-            background: locGranted ? "var(--primary-light)" : "var(--primary)",
-            color: "var(--ink)",
-            border: "2px solid var(--ink)",
-            borderRadius: "var(--r-md)",
-            fontFamily: "var(--font-sans)",
-            fontWeight: 700, fontSize: 15,
-            cursor: "pointer",
-            boxShadow: "var(--sh-md)",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}
-        >
-          {locGranted ? "✅ מיקום אושר" : "📍 אפשר מיקום"}
-        </button>
-      </div>
+      {/* simple permission button */}
+      <button
+        onClick={requestLocation}
+        style={{
+          width: "100%", height: 52,
+          background: locGranted ? "var(--primary-light)" : "var(--primary)",
+          color: "var(--ink)",
+          border: "2px solid var(--ink)",
+          borderRadius: "var(--r-md)",
+          fontFamily: "var(--font-sans)",
+          fontWeight: 700, fontSize: 15,
+          cursor: "pointer",
+          boxShadow: "var(--sh-md)",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          marginBottom: 12,
+        }}
+      >
+        {locGranted ? "✅ מיקום אושר" : "📍 אפשר גישה"}
+      </button>
 
       <button
         onClick={() => setLocGranted(true)}
