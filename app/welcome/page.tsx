@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 /* ──────────────────────────────────────────────────────────
@@ -510,9 +510,11 @@ function StepLocation({
 /* ──────────────────────────────────────────────────────────
    Main onboarding page
 ────────────────────────────────────────────────────────── */
-export default function WelcomePage() {
+function WelcomePageInner() {
   const router = useRouter();
-  const [guardDone, setGuardDone] = useState(false);
+  const searchParams = useSearchParams();
+  const isPreview = searchParams.get("preview") === "1";
+  const [guardDone, setGuardDone] = useState(isPreview);
   const [step, setStep]           = useState(0);
   const [personas, setPersonas]   = useState<Persona[]>([]);
   const [locGranted, setLocGranted] = useState(false);
@@ -520,8 +522,10 @@ export default function WelcomePage() {
   const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  /* Guard: skip onboarding if already done, redirect to login if not authed */
+  /* Guard: skip onboarding if already done, redirect to login if not authed.
+     ?preview=1 bypasses this check for design review. */
   useEffect(() => {
+    if (isPreview) return;
     async function guard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace("/login"); return; }
@@ -531,7 +535,7 @@ export default function WelcomePage() {
       setGuardDone(true);
     }
     guard();
-  }, [router]);
+  }, [router, isPreview]);
 
   const TOTAL = 4;
 
@@ -687,5 +691,13 @@ export default function WelcomePage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function WelcomePage() {
+  return (
+    <Suspense>
+      <WelcomePageInner />
+    </Suspense>
   );
 }
