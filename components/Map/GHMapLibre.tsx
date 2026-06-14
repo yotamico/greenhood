@@ -28,19 +28,26 @@ const CAT_PIN: Record<string, { emoji: string; bg: string }> = {
 };
 
 function makePinEl(emoji: string, bg: string): HTMLElement {
-  const el = document.createElement("div");
-  el.style.cssText = `
-    width:36px;height:36px;
-    background:${bg};border:2px solid #2D2A24;
-    border-radius:50% 50% 50% 0;transform:rotate(-45deg);
-    box-shadow:2px 2px 0 rgba(45,42,36,0.18);
-    display:flex;align-items:center;justify-content:center;cursor:pointer;
-  `;
+  const outer = document.createElement("div");
+  outer.style.cssText = "position:relative;width:32px;height:44px;cursor:pointer;";
+
+  const circle = document.createElement("div");
+  circle.style.cssText = `position:absolute;top:0;left:1px;width:30px;height:30px;border-radius:50%;background:${bg};border:2px solid #2D2A24;box-shadow:2px 2px 0 rgba(45,42,36,0.18);display:flex;align-items:center;justify-content:center;`;
   const span = document.createElement("span");
-  span.style.cssText = "transform:rotate(45deg);font-size:16px;line-height:1;";
   span.textContent = emoji;
-  el.appendChild(span);
-  return el;
+  span.style.cssText = "font-size:14px;line-height:1;";
+  circle.appendChild(span);
+
+  const tipOuter = document.createElement("div");
+  tipOuter.style.cssText = "position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:16px solid #2D2A24;";
+
+  const tipInner = document.createElement("div");
+  tipInner.style.cssText = `position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-top:13px solid ${bg};`;
+
+  outer.appendChild(circle);
+  outer.appendChild(tipOuter);
+  outer.appendChild(tipInner);
+  return outer;
 }
 
 function toLineGeoJSON(coords: [number, number][]) {
