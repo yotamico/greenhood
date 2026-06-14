@@ -184,7 +184,7 @@ export default function GHMapLibre({
           <div style="position:absolute;inset:2px;border-radius:50%;background:#6B8FA8;
             border:2.5px solid #2D2A24;box-shadow:0 0 0 3px white;"></div>
         </div>`;
-      userMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center" })
+      userMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center", pitchAlignment: "viewport", rotationAlignment: "viewport" })
         .setLngLat(lngLat).addTo(map);
     } else {
       userMarkerRef.current.setLngLat(lngLat);
@@ -198,7 +198,7 @@ export default function GHMapLibre({
     destMarkerRef.current?.remove();
     destMarkerRef.current = null;
     if (!navDest) return;
-    destMarkerRef.current = new maplibregl.Marker({ element: makePinEl("🎯", "#FFB347"), anchor: "bottom" })
+    destMarkerRef.current = new maplibregl.Marker({ element: makePinEl("🎯", "#FFB347"), anchor: "bottom", pitchAlignment: "viewport", rotationAlignment: "viewport" })
       .setLngLat([navDest.lng, navDest.lat]).addTo(map);
   }, [navDest]);
 
@@ -220,7 +220,7 @@ export default function GHMapLibre({
         const el = makePinEl(pin.emoji, pin.bg);
         if (onItemClick) el.addEventListener("click", () => onItemClick(it.id));
         existing.set(it.id,
-          new maplibregl.Marker({ element: el, anchor: "bottom" })
+          new maplibregl.Marker({ element: el, anchor: "bottom", pitchAlignment: "viewport", rotationAlignment: "viewport" })
             .setLngLat([it.lng!, it.lat!]).addTo(map)
         );
       });
