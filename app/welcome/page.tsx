@@ -451,7 +451,7 @@ function StepLocation({
           background: "var(--surface)", borderRadius: 999,
           border: "1.5px solid var(--ink)", padding: "6px 12px",
         }}>
-          📍 רחוב הרצל, רמת גן · 12 חפצים פעילים
+          מחפש מיקום...
         </div>
 
         {/* allow button — floats inside map at bottom */}
