@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
+import NotificationsPopup from "@/components/NotificationsPopup";
 
 /* ── dynamic import — MapLibre needs window ── */
 const GHMap = dynamic(() => import("@/components/Map/GHMapLibre"), {
@@ -159,6 +160,7 @@ function MapPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [authed, setAuthed]       = useState(false);
+  const [showNotifPopup, setShowNotifPopup] = useState(false);
   const [items,  setItems]        = useState<Item[]>([]);
   const [cat,    setCat]          = useState("all");
   const [search, setSearch]       = useState("");
@@ -287,6 +289,16 @@ function MapPageInner() {
       setAuthed(true);
     });
   }, [router]);
+
+  /* notifications popup — appears 600ms after onboarding completes */
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pendingNotifRequest");
+    if (pending === "true") {
+      sessionStorage.removeItem("pendingNotifRequest");
+      const t = setTimeout(() => setShowNotifPopup(true), 600);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   /* geolocation — watch position for live navigation */
   useEffect(() => {
@@ -933,6 +945,11 @@ function MapPageInner() {
       <div style={{ zIndex: 30 }}>
         <TabBar />
       </div>
+
+      <NotificationsPopup
+        visible={showNotifPopup}
+        onClose={() => setShowNotifPopup(false)}
+      />
     </div>
   );
 }

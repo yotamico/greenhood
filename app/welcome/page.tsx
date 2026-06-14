@@ -224,144 +224,6 @@ function StepPersona({
 }
 
 /* ──────────────────────────────────────────────────────────
-   Step 3 – Push Notifications
-────────────────────────────────────────────────────────── */
-function StepPush({
-  pushGranted, setPushGranted,
-}: {
-  pushGranted: boolean; setPushGranted: (v: boolean) => void;
-}) {
-  async function requestPush() {
-    if (!("Notification" in window)) { setPushGranted(true); return; }
-    if ("serviceWorker" in navigator) {
-      try { await navigator.serviceWorker.register("/sw.js"); } catch { /* ignore */ }
-    }
-    const perm = await Notification.requestPermission();
-    if (perm === "granted") {
-      setPushGranted(true);
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
-        const padding = "=".repeat((4 - (vapidKey.length % 4)) % 4);
-        const raw = atob((vapidKey + padding).replace(/-/g, "+").replace(/_/g, "/"));
-        const key = Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: key as unknown as ArrayBuffer,
-        });
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          let lat: number | null = null, lng: number | null = null;
-          try {
-            const pos = await new Promise<GeolocationPosition>((res, rej) =>
-              navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
-            );
-            lat = pos.coords.latitude; lng = pos.coords.longitude;
-          } catch { /* optional */ }
-          await supabase.from("push_subscriptions").upsert(
-            { user_id: session.user.id, endpoint: sub.endpoint, subscription: sub.toJSON(), lat, lng },
-            { onConflict: "user_id,endpoint" }
-          );
-        }
-      } catch { /* ignore */ }
-    }
-  }
-
-  return (
-    <div>
-      <h2 style={{
-        fontFamily: "var(--font-display)",
-        fontSize: 30, fontWeight: 900, lineHeight: 1.1,
-        letterSpacing: "-0.02em", margin: "0 0 8px",
-      }}>
-        אל תחמיץ שנייה
-      </h2>
-      <p style={{ fontSize: 14, color: "var(--muted)", fontWeight: 500, margin: "0 0 20px" }}>
-        נעדכן אותך כשחפץ מהרשימה שלך יצא לרחוב — לפני כולם.
-      </p>
-
-      {/* notification preview */}
-      <div style={{
-        background: "var(--surface)", borderRadius: 16,
-        border: "2px solid var(--ink)", boxShadow: "4px 4px 0 var(--shadow-ink)",
-        padding: "14px 16px", marginBottom: 16,
-      }}>
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          marginBottom: 8,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{
-              width: 22, height: 22, borderRadius: 6,
-              background: "var(--primary)", border: "1.5px solid var(--ink)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 12,
-            }}>🌿</div>
-            <span style={{ fontWeight: 800, fontSize: 12 }}>GreenHOOD</span>
-          </div>
-          <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>עכשיו</span>
-        </div>
-        <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 3, direction: "rtl" }}>
-          מונסטרה גדולה – 80 מ׳ ממך!
-        </div>
-        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500, direction: "rtl" }}>
-          מישהו הוציא לרחוב הרצל. מהר לפני כולם 🏃
-        </div>
-      </div>
-
-      {/* permission card */}
-      <div style={{
-        background: "var(--warning-tint)", borderRadius: 16,
-        border: "2px solid var(--ink)", boxShadow: "3px 3px 0 var(--shadow-ink)",
-        padding: 16, marginBottom: 12,
-      }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "start", marginBottom: 14 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 12,
-            background: "#E8A020", border: "2px solid var(--ink)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 20, flexShrink: 0,
-          }}>🔔</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 3 }}>התראות Push</div>
-            <div style={{ fontSize: 12, color: "var(--ink-soft)", lineHeight: 1.5, fontWeight: 500 }}>
-              רק על חפצים בסביבה קרובה. בלי ספאם.
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={requestPush}
-          style={{
-            width: "100%", height: 48,
-            background: pushGranted ? "var(--primary-light)" : "var(--primary)",
-            color: "var(--ink)",
-            border: "2px solid var(--ink)", borderRadius: "var(--r-md)",
-            fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 15,
-            cursor: "pointer", boxShadow: "var(--sh-md)",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-          }}
-        >
-          {pushGranted ? "✅ התראות אופשרו" : "אפשר התראות 🔔"}
-        </button>
-      </div>
-
-      <button
-        onClick={() => setPushGranted(true)}
-        style={{
-          width: "100%", padding: "12px",
-          background: "transparent", border: "1.5px dashed var(--ink)",
-          borderRadius: 12, cursor: "pointer",
-          fontFamily: "var(--font-sans)", fontSize: 13,
-          fontWeight: 600, color: "var(--ink-soft)",
-        }}
-      >
-        אולי אחר כך
-      </button>
-    </div>
-  );
-}
-
-/* ──────────────────────────────────────────────────────────
    Step 2 – Location
 ────────────────────────────────────────────────────────── */
 function StepLocation({
@@ -502,7 +364,6 @@ function WelcomePageInner() {
   const [step, setStep]           = useState(0);
   const [personas, setPersonas]   = useState<Persona[]>([]);
   const [locGranted, setLocGranted] = useState(false);
-  const [pushGranted, setPushGranted] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -521,7 +382,7 @@ function WelcomePageInner() {
     guard();
   }, [router, isPreview]);
 
-  const TOTAL = 4;
+  const TOTAL = 3;
 
   async function finish() {
     setSaving(true);
@@ -542,6 +403,7 @@ function WelcomePageInner() {
       setSaving(false);
       return;
     }
+    sessionStorage.setItem("pendingNotifRequest", "true");
     router.replace("/map");
   }
 
@@ -553,7 +415,6 @@ function WelcomePageInner() {
   const ctaLabel =
     step === 0 ? "בוא נצא לציד ←" :
     step === 1 ? (personas.length > 0 ? `המשך עם ${personas.length} בחירות ←` : "המשך ←") :
-    step === 2 ? "המשך ←" :
     saving ? "שומר…" : "סיים והיכנס ✓";
 
   if (!guardDone) return (
@@ -629,7 +490,6 @@ function WelcomePageInner() {
         {step === 0 && <StepWelcome />}
         {step === 1 && <StepPersona personas={personas} setPersonas={setPersonas} />}
         {step === 2 && <StepLocation locGranted={locGranted} setLocGranted={setLocGranted} />}
-        {step === 3 && <StepPush pushGranted={pushGranted} setPushGranted={setPushGranted} />}
       </div>
 
       {/* CTA */}
