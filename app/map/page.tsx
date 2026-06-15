@@ -718,73 +718,26 @@ function MapPageInner() {
             {/* day selector — appears to the right when active */}
             {streetModeActive && (
               <>
-                {(["היום","מחר","מחרתיים"] as const).map(day => {
-                  const offset = day === "מחר" ? 1 : day === "מחרתיים" ? 2 : 0;
-                  const d = new Date(); d.setDate(d.getDate() + offset);
-                  const hDay = JS_DAY_TO_HEBREW[d.getDay()] ?? "";
-                  return (
-                    <button
-                      key={day}
-                      onClick={() => setStreetModeDay(day)}
-                      style={{
-                        padding: "6px 11px",
-                        background: streetModeDay === day ? "#C94B1F" : "rgba(245,242,232,0.95)",
-                        color: streetModeDay === day ? "white" : "var(--ink)",
-                        border: `1.5px solid ${streetModeDay === day ? "#C94B1F" : "var(--ink)"}`,
-                        borderRadius: 999,
-                        fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
-                        cursor: "pointer",
-                        boxShadow: "var(--sh-sm)",
-                        whiteSpace: "nowrap",
-                        display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
-                        lineHeight: 1.1,
-                      }}
-                    >
-                      <span>{day}</span>
-                      <span style={{ fontSize: 9, fontWeight: 600, opacity: 0.75 }}>{hDay}</span>
-                    </button>
-                  );
-                })}
+                {(["היום","מחר","מחרתיים"] as const).map(day => (
+                  <button
+                    key={day}
+                    onClick={() => setStreetModeDay(day)}
+                    style={{
+                      padding: "6px 11px",
+                      background: streetModeDay === day ? "#C94B1F" : "rgba(245,242,232,0.95)",
+                      color: streetModeDay === day ? "white" : "var(--ink)",
+                      border: `1.5px solid ${streetModeDay === day ? "#C94B1F" : "var(--ink)"}`,
+                      borderRadius: 999,
+                      fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
+                      cursor: "pointer",
+                      boxShadow: "var(--sh-sm)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >{day}</button>
+                ))}
               </>
             )}
           </div>
-
-          {/* street list panel — shows below when active and not loading */}
-          {streetModeActive && !streetLoading && !streetError && streetModeNames.length > 0 && (
-            <div style={{
-              background: "rgba(245,242,232,0.97)",
-              border: "1.5px solid var(--ink)",
-              borderRadius: 12,
-              boxShadow: "var(--sh-md)",
-              maxHeight: 220,
-              overflowY: "auto",
-              minWidth: 180,
-              maxWidth: 240,
-            }}>
-              <div style={{
-                padding: "8px 12px 5px",
-                borderBottom: "1px solid rgba(45,42,36,0.1)",
-                fontFamily: "var(--font-sans)", fontWeight: 800, fontSize: 11,
-                color: "#C94B1F", letterSpacing: "0.04em",
-                direction: "rtl",
-              }}>
-                רחובות לפינוי — {streetModeHebrewDay}
-              </div>
-              {streetModeNames.map((name, i) => (
-                <div key={i} style={{
-                  padding: "6px 12px",
-                  fontFamily: "var(--font-sans)", fontWeight: 600, fontSize: 12,
-                  color: "var(--ink)",
-                  borderBottom: i < streetModeNames.length - 1 ? "1px solid rgba(45,42,36,0.07)" : "none",
-                  direction: "rtl",
-                  display: "flex", alignItems: "center", gap: 6,
-                }}>
-                  <span style={{ color: "#C94B1F", fontSize: 10 }}>●</span>
-                  {name}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
 

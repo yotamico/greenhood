@@ -132,7 +132,7 @@ export default function GHMapLibre({
       map.addLayer({ id: "street-mode-route-shadow", type: "line", source: "street-mode-route",
         paint: { "line-color": "#2D2A24", "line-width": 10, "line-opacity": 0.12 } });
       map.addLayer({ id: "street-mode-route-line", type: "line", source: "street-mode-route",
-        paint: { "line-color": "#C8A84B", "line-width": 5, "line-opacity": 0.95 } });
+        paint: { "line-color": "#6B9956", "line-width": 5, "line-opacity": 0.95 } });
 
       setMapLoaded(true);
     });
