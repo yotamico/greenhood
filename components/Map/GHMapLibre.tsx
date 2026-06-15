@@ -124,8 +124,7 @@ export default function GHMapLibre({
         type: "geojson", data: { type: "FeatureCollection", features: [] },
       });
       map.addLayer({ id: "clearance-streets-line", type: "line", source: "clearance-streets",
-        paint: { "line-color": "#C94B1F", "line-width": 6, "line-opacity": 0.9,
-                 "line-dasharray": [5, 3] } });
+        paint: { "line-color": "#6B9956", "line-width": 6, "line-opacity": 0.92 } });
 
       /* street-mode route — single continuous OSRM-routed line */
       map.addSource("street-mode-route", { type: "geojson", data: toLineGeoJSON([]) });

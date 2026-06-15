@@ -118,6 +118,31 @@ const JS_DAY_TO_HEBREW: Record<number,string> = {
   0:"ראשון",1:"שני",2:"שלישי",3:"רביעי",4:"חמישי",5:"שישי",
 };
 
+let _streetCache: Map<string,[number,number][][]> | null = null;
+let _streetCachePromise: Promise<Map<string,[number,number][][]>> | null = null;
+
+function fetchNesZionaStreets(): Promise<Map<string,[number,number][][]>> {
+  if (_streetCache) return Promise.resolve(_streetCache);
+  if (_streetCachePromise) return _streetCachePromise;
+  _streetCachePromise = fetch("/api/streets")
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then((data: { elements?: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] }) => {
+      const map = new Map<string,[number,number][][]>();
+      for (const el of data.elements ?? []) {
+        const name = el.tags?.name;
+        if (!name || !el.geometry?.length) continue;
+        const seg: [number,number][] = el.geometry.map(({ lat, lon }) => [lat, lon]);
+        if (!map.has(name)) map.set(name, []);
+        map.get(name)!.push(seg);
+      }
+      _streetCache = map;
+      _streetCachePromise = null;
+      return map;
+    })
+    .catch(() => { _streetCachePromise = null; return new Map<string,[number,number][][]>(); });
+  return _streetCachePromise;
+}
+
 function MapPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -183,7 +208,7 @@ function MapPageInner() {
   /* street clearance mode — floating button */
   const [streetModeActive, setStreetModeActive] = useState(false);
   const [streetModeDay,    setStreetModeDay]    = useState<"היום"|"מחר"|"מחרתיים">("מחר");
-  const [streetModeRoute,  setStreetModeRoute]  = useState<[number,number][] | null>(null);
+  const [clearanceStreets, setClearanceStreets] = useState<[number,number][][]>([]);
   const [streetLoading,    setStreetLoading]    = useState(false);
   const [streetError,      setStreetError]      = useState(false);
   const [streetCount,      setStreetCount]      = useState(0);
@@ -214,37 +239,29 @@ function MapPageInner() {
       .map(s => s.name);
   }, [streetModeActive, streetModeHebrewDay]);
 
-  /* resolve street route via OSRM trip whenever mode or day changes */
+  /* fetch full street geometry from Overpass whenever mode or day changes */
   useEffect(() => {
     if (!streetModeActive || !streetModeNames.length) {
-      setStreetModeRoute(null);
+      setClearanceStreets([]);
       setStreetCount(0);
       return;
     }
-    const waypoints = NES_ZIONA_STREETS
-      .filter(s => streetModeNames.includes(s.name) && s.lat != null && s.lng != null);
-    if (waypoints.length < 2) {
-      setStreetModeRoute(null);
-      setStreetCount(waypoints.length);
-      return;
-    }
+    const scheduledNames = new Set(streetModeNames);
     setStreetLoading(true);
     setStreetError(false);
-    const coords = waypoints.map(s => `${s.lng},${s.lat}`).join(";");
-    fetch(
-      `https://router.project-osrm.org/trip/v1/driving/${coords}?roundtrip=false&source=first&destination=last&overview=full&geometries=geojson`
-    )
-      .then(r => r.json())
-      .then((d: { trips?: { geometry: { coordinates: [number,number][] }; distance: number }[] }) => {
-        const trip = d.trips?.[0];
-        if (!trip) { setStreetError(true); return; }
-        const route: [number,number][] = trip.geometry.coordinates.map(
-          ([lng, lat]) => [lat, lng] as [number,number]
+    fetchNesZionaStreets().then(streetMap => {
+      if (streetMap.size === 0) { setStreetError(true); setClearanceStreets([]); return; }
+      const segs: [number,number][][] = [];
+      let matched = 0;
+      streetMap.forEach((ways, osmName) => {
+        const hit = [...scheduledNames].some(
+          s => osmName === s || osmName.includes(s) || s.includes(osmName)
         );
-        setStreetModeRoute(route);
-        setStreetCount(waypoints.length);
-      })
-      .catch(() => setStreetError(true))
+        if (hit) { segs.push(...ways); matched++; }
+      });
+      setClearanceStreets(segs);
+      setStreetCount(matched);
+    }).catch(() => setStreetError(true))
       .finally(() => setStreetLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streetModeActive, streetModeNames]);
@@ -453,7 +470,7 @@ function MapPageInner() {
           navDest={navDest}
           centerTrigger={centerTrigger}
           clearanceRoute={clearanceRoute}
-          streetModeRoute={streetModeRoute}
+          clearanceStreets={clearanceStreets}
           navMode={!!navDest}
           heading={heading}
         />
