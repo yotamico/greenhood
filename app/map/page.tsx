@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
 import NotificationsPopup from "@/components/NotificationsPopup";
+import { NES_ZIONA_STREETS } from "@/lib/nes-ziona-streets";
 
 /* ── dynamic import — MapLibre needs window ── */
 const GHMap = dynamic(() => import("@/components/Map/GHMapLibre"), {
@@ -113,48 +114,9 @@ function fmtDur(s: number) {
 
 /* ─────────────────────────────────────────────────────────── */
 
-/* Module-level Overpass cache — survives re-renders, fetched once per session.
-   Key: street_name (as stored in OSM tags.name), value: array of way segments. */
-let _streetCache: Map<string, [number,number][][]> | null = null;
-let _streetCachePromise: Promise<Map<string,[number,number][][]>> | null = null;
-
-const HEBREW_DAY_NUM: Record<string,number> = {
-  "ראשון":0,"שני":1,"שלישי":2,"רביעי":3,"חמישי":4,"שישי":5,
+const JS_DAY_TO_HEBREW: Record<number,string> = {
+  0:"ראשון",1:"שני",2:"שלישי",3:"רביעי",4:"חמישי",5:"שישי",
 };
-
-/* Fetch all named road ways in Nes Ziona bounding box once, build a name→segments map.
-   Uses GET so no preflight / Content-Type issue. */
-function fetchNesZionaStreets(): Promise<Map<string,[number,number][][]>> {
-  if (_streetCache) return Promise.resolve(_streetCache);
-  if (_streetCachePromise) return _streetCachePromise;
-
-  /* /api/streets is a Next.js proxy that calls Overpass server-side — no CORS issues */
-  _streetCachePromise = fetch("/api/streets")
-    .then(r => {
-      if (!r.ok) throw new Error(`/api/streets ${r.status}`);
-      return r.json();
-    })
-    .then((data: { elements?: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] }) => {
-      const map = new Map<string, [number,number][][]>();
-      for (const el of data.elements ?? []) {
-        const name = el.tags?.name;
-        if (!name || !el.geometry?.length) continue;
-        const seg: [number,number][] = el.geometry.map(({ lat, lon }) => [lat, lon]);
-        if (!map.has(name)) map.set(name, []);
-        map.get(name)!.push(seg);
-      }
-      _streetCache = map;
-      _streetCachePromise = null;
-      return map;
-    })
-    .catch(err => {
-      console.error("[clearance] Overpass fetch failed:", err);
-      _streetCachePromise = null;   // allow retry on next activation
-      return new Map<string,[number,number][][]>();
-    });
-
-  return _streetCachePromise;
-}
 
 function MapPageInner() {
   const router = useRouter();
@@ -221,8 +183,7 @@ function MapPageInner() {
   /* street clearance mode — floating button */
   const [streetModeActive, setStreetModeActive] = useState(false);
   const [streetModeDay,    setStreetModeDay]    = useState<"היום"|"מחר"|"מחרתיים">("מחר");
-  const [scheduleData,     setScheduleData]     = useState<{street_name:string; clearance_day:string}[]>([]);
-  const [clearanceStreets, setClearanceStreets] = useState<[number,number][][]>([]);
+  const [streetModeRoute,  setStreetModeRoute]  = useState<[number,number][] | null>(null);
   const [streetLoading,    setStreetLoading]    = useState(false);
   const [streetError,      setStreetError]      = useState(false);
   const [streetCount,      setStreetCount]      = useState(0);
@@ -239,48 +200,54 @@ function MapPageInner() {
   const routeDestRef = useRef<string | null>(null);
   navDestRef.current = navDest;
 
-  /* fetch clearance schedule once */
-  useEffect(() => {
-    supabase.from("clearance_schedule").select("street_name,clearance_day")
-      .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;clearance_day:string}[]));
-  }, []);
+  /* compute scheduled streets from local NES_ZIONA_STREETS data */
+  const streetModeHebrewDay = useMemo(() => {
+    const offset = streetModeDay === "מחר" ? 1 : streetModeDay === "מחרתיים" ? 2 : 0;
+    const d = new Date(); d.setDate(d.getDate() + offset);
+    return JS_DAY_TO_HEBREW[d.getDay()] ?? "";
+  }, [streetModeDay]);
 
-  /* resolve street geometries whenever mode or day changes */
+  const streetModeNames = useMemo(() => {
+    if (!streetModeActive) return [];
+    return NES_ZIONA_STREETS
+      .filter(s => s.collection_day === streetModeHebrewDay)
+      .map(s => s.name);
+  }, [streetModeActive, streetModeHebrewDay]);
+
+  /* resolve street route via OSRM trip whenever mode or day changes */
   useEffect(() => {
-    if (!streetModeActive || !scheduleData.length) {
-      setClearanceStreets([]);
+    if (!streetModeActive || !streetModeNames.length) {
+      setStreetModeRoute(null);
+      setStreetCount(0);
       return;
     }
-    const offset = streetModeDay === "מחר" ? 1 : streetModeDay === "מחרתיים" ? 2 : 0;
-    const target = new Date();
-    target.setDate(target.getDate() + offset);
-    const jsDay = target.getDay();
-
-    const scheduledNames = new Set(
-      scheduleData
-        .filter(s => HEBREW_DAY_NUM[s.clearance_day] === jsDay)
-        .map(s => s.street_name)
-    );
-    if (!scheduledNames.size) { setClearanceStreets([]); return; }
-
+    const waypoints = NES_ZIONA_STREETS
+      .filter(s => streetModeNames.includes(s.name) && s.lat != null && s.lng != null);
+    if (waypoints.length < 2) {
+      setStreetModeRoute(null);
+      setStreetCount(waypoints.length);
+      return;
+    }
     setStreetLoading(true);
     setStreetError(false);
-    fetchNesZionaStreets().then(streetMap => {
-      if (streetMap.size === 0) { setStreetError(true); setClearanceStreets([]); return; }
-      const segs: [number,number][][] = [];
-      let matchedCount = 0;
-      streetMap.forEach((ways, osmName) => {
-        const matched = [...scheduledNames].some(
-          sched => osmName === sched || osmName.includes(sched) || sched.includes(osmName)
+    const coords = waypoints.map(s => `${s.lng},${s.lat}`).join(";");
+    fetch(
+      `https://router.project-osrm.org/trip/v1/driving/${coords}?roundtrip=false&source=first&destination=last&overview=full&geometries=geojson`
+    )
+      .then(r => r.json())
+      .then((d: { trips?: { geometry: { coordinates: [number,number][] }; distance: number }[] }) => {
+        const trip = d.trips?.[0];
+        if (!trip) { setStreetError(true); return; }
+        const route: [number,number][] = trip.geometry.coordinates.map(
+          ([lng, lat]) => [lat, lng] as [number,number]
         );
-        if (matched) { segs.push(...ways); matchedCount++; }
-      });
-      setClearanceStreets(segs);
-      setStreetCount(matchedCount);
-    }).catch(() => setStreetError(true))
+        setStreetModeRoute(route);
+        setStreetCount(waypoints.length);
+      })
+      .catch(() => setStreetError(true))
       .finally(() => setStreetLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streetModeActive, streetModeDay, scheduleData]);
+  }, [streetModeActive, streetModeNames]);
 
   /* auth guard */
   useEffect(() => {
@@ -486,7 +453,7 @@ function MapPageInner() {
           navDest={navDest}
           centerTrigger={centerTrigger}
           clearanceRoute={clearanceRoute}
-          clearanceStreets={clearanceStreets}
+          streetModeRoute={streetModeRoute}
           navMode={!!navDest}
           heading={heading}
         />
@@ -707,65 +674,116 @@ function MapPageInner() {
           left: 12,
           zIndex: 15,
           display: "flex",
-          alignItems: "center",
+          flexDirection: "column",
+          alignItems: "flex-start",
           gap: 6,
         }}>
-          {/* main toggle pill */}
-          <button
-            onClick={() => setStreetModeActive(a => !a)}
-            style={{
-              padding: "7px 12px",
-              background: streetModeActive ? "var(--ink)" : "rgba(245,242,232,0.95)",
-              color: streetModeActive ? "var(--paper)" : "var(--ink)",
-              border: "1.5px solid var(--ink)",
-              borderRadius: 999,
-              fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
-              cursor: "pointer",
-              boxShadow: "var(--sh-md)",
-              display: "flex", alignItems: "center", gap: 5,
-              whiteSpace: "nowrap",
-            }}
-          >
-            <svg width={13} height={13} viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/>
-              <circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/>
-              <path d="M5 17V11h14V7" strokeWidth={1.6} strokeDasharray="3 2"/>
-            </svg>
-            מסלול פינוי
-            {streetModeActive && (
-              <span style={{
-                background: streetLoading ? "var(--muted)" : streetError ? "var(--accent)" : "#C94B1F",
-                color: "white", borderRadius: 999,
-                fontSize: 10, fontWeight: 800,
-                padding: "1px 6px", marginLeft: 2,
-              }}>
-                {streetLoading ? "…" : streetError ? "שגיאה" : streetCount > 0 ? `${streetCount} רח'` : "פעיל"}
-              </span>
-            )}
-          </button>
+          {/* row: main toggle + day tabs */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* main toggle pill */}
+            <button
+              onClick={() => setStreetModeActive(a => !a)}
+              style={{
+                padding: "7px 12px",
+                background: streetModeActive ? "var(--ink)" : "rgba(245,242,232,0.95)",
+                color: streetModeActive ? "var(--paper)" : "var(--ink)",
+                border: "1.5px solid var(--ink)",
+                borderRadius: 999,
+                fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
+                cursor: "pointer",
+                boxShadow: "var(--sh-md)",
+                display: "flex", alignItems: "center", gap: 5,
+                whiteSpace: "nowrap",
+              }}
+            >
+              <svg width={13} height={13} viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/>
+                <circle cx="19" cy="5" r="2" fill="currentColor" stroke="none"/>
+                <path d="M5 17V11h14V7" strokeWidth={1.6} strokeDasharray="3 2"/>
+              </svg>
+              מסלול פינוי
+              {streetModeActive && (
+                <span style={{
+                  background: streetLoading ? "var(--muted)" : streetError ? "var(--accent)" : "#C94B1F",
+                  color: "white", borderRadius: 999,
+                  fontSize: 10, fontWeight: 800,
+                  padding: "1px 6px", marginLeft: 2,
+                }}>
+                  {streetLoading ? "…" : streetError ? "שגיאה" : streetCount > 0 ? `${streetCount} רח'` : "פעיל"}
+                </span>
+              )}
+            </button>
 
-          {/* day selector — appears to the right when active */}
-          {streetModeActive && (
-            <>
-              {(["היום","מחר","מחרתיים"] as const).map(day => (
-                <button
-                  key={day}
-                  onClick={() => setStreetModeDay(day)}
-                  style={{
-                    padding: "6px 11px",
-                    background: streetModeDay === day ? "#C94B1F" : "rgba(245,242,232,0.95)",
-                    color: streetModeDay === day ? "white" : "var(--ink)",
-                    border: `1.5px solid ${streetModeDay === day ? "#C94B1F" : "var(--ink)"}`,
-                    borderRadius: 999,
-                    fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
-                    cursor: "pointer",
-                    boxShadow: "var(--sh-sm)",
-                    whiteSpace: "nowrap",
-                  }}
-                >{day}</button>
+            {/* day selector — appears to the right when active */}
+            {streetModeActive && (
+              <>
+                {(["היום","מחר","מחרתיים"] as const).map(day => {
+                  const offset = day === "מחר" ? 1 : day === "מחרתיים" ? 2 : 0;
+                  const d = new Date(); d.setDate(d.getDate() + offset);
+                  const hDay = JS_DAY_TO_HEBREW[d.getDay()] ?? "";
+                  return (
+                    <button
+                      key={day}
+                      onClick={() => setStreetModeDay(day)}
+                      style={{
+                        padding: "6px 11px",
+                        background: streetModeDay === day ? "#C94B1F" : "rgba(245,242,232,0.95)",
+                        color: streetModeDay === day ? "white" : "var(--ink)",
+                        border: `1.5px solid ${streetModeDay === day ? "#C94B1F" : "var(--ink)"}`,
+                        borderRadius: 999,
+                        fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 12,
+                        cursor: "pointer",
+                        boxShadow: "var(--sh-sm)",
+                        whiteSpace: "nowrap",
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 1,
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      <span>{day}</span>
+                      <span style={{ fontSize: 9, fontWeight: 600, opacity: 0.75 }}>{hDay}</span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          </div>
+
+          {/* street list panel — shows below when active and not loading */}
+          {streetModeActive && !streetLoading && !streetError && streetModeNames.length > 0 && (
+            <div style={{
+              background: "rgba(245,242,232,0.97)",
+              border: "1.5px solid var(--ink)",
+              borderRadius: 12,
+              boxShadow: "var(--sh-md)",
+              maxHeight: 220,
+              overflowY: "auto",
+              minWidth: 180,
+              maxWidth: 240,
+            }}>
+              <div style={{
+                padding: "8px 12px 5px",
+                borderBottom: "1px solid rgba(45,42,36,0.1)",
+                fontFamily: "var(--font-sans)", fontWeight: 800, fontSize: 11,
+                color: "#C94B1F", letterSpacing: "0.04em",
+                direction: "rtl",
+              }}>
+                רחובות לפינוי — {streetModeHebrewDay}
+              </div>
+              {streetModeNames.map((name, i) => (
+                <div key={i} style={{
+                  padding: "6px 12px",
+                  fontFamily: "var(--font-sans)", fontWeight: 600, fontSize: 12,
+                  color: "var(--ink)",
+                  borderBottom: i < streetModeNames.length - 1 ? "1px solid rgba(45,42,36,0.07)" : "none",
+                  direction: "rtl",
+                  display: "flex", alignItems: "center", gap: 6,
+                }}>
+                  <span style={{ color: "#C94B1F", fontSize: 10 }}>●</span>
+                  {name}
+                </div>
               ))}
-            </>
+            </div>
           )}
         </div>
       )}
