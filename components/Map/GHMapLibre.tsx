@@ -28,13 +28,19 @@ const CAT_PIN: Record<string, { emoji: string; bg: string }> = {
 };
 
 function makePinEl(emoji: string, bg: string): HTMLElement {
-  const el = document.createElement("div");
-  el.style.cssText = `width:36px;height:36px;background:${bg};border:2px solid #2D2A24;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:2px 2px 0 rgba(45,42,36,0.18);display:flex;align-items:center;justify-content:center;cursor:pointer;`;
+  // MapLibre overwrites style.transform on the element it receives — keep the wrapper clean
+  const wrapper = document.createElement("div");
+  wrapper.style.cssText = "width:36px;height:36px;cursor:pointer;";
+
+  const inner = document.createElement("div");
+  inner.style.cssText = `width:36px;height:36px;background:${bg};border:2px solid #2D2A24;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:2px 2px 0 rgba(45,42,36,0.18);display:flex;align-items:center;justify-content:center;`;
+
   const span = document.createElement("span");
   span.style.cssText = "transform:rotate(45deg);font-size:16px;line-height:1;";
   span.textContent = emoji;
-  el.appendChild(span);
-  return el;
+  inner.appendChild(span);
+  wrapper.appendChild(inner);
+  return wrapper;
 }
 
 function toLineGeoJSON(coords: [number, number][]) {
