@@ -27,18 +27,27 @@ const CAT_PIN: Record<string, { emoji: string; bg: string }> = {
   kids:        { emoji: "🧸", bg: "#F0D5CB" },
 };
 
-function makePinEl(emoji: string, bg: string): HTMLElement {
+function makePinEl(emoji: string, bg: string, imageUrl?: string | null): HTMLElement {
+  const S = 44;
   // MapLibre overwrites style.transform on the element it receives — keep the wrapper clean
   const wrapper = document.createElement("div");
-  wrapper.style.cssText = "width:36px;height:36px;cursor:pointer;";
+  wrapper.style.cssText = `width:${S}px;height:${S}px;cursor:pointer;`;
 
   const inner = document.createElement("div");
-  inner.style.cssText = `width:36px;height:36px;background:${bg};border:2px solid #2D2A24;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:2px 2px 0 rgba(45,42,36,0.18);display:flex;align-items:center;justify-content:center;`;
+  inner.style.cssText = `width:${S}px;height:${S}px;background:${bg};border:2.5px solid #2D2A24;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:2px 2px 0 rgba(45,42,36,0.18);display:flex;align-items:center;justify-content:center;overflow:hidden;`;
 
-  const span = document.createElement("span");
-  span.style.cssText = "transform:rotate(45deg);font-size:16px;line-height:1;";
-  span.textContent = emoji;
-  inner.appendChild(span);
+  if (imageUrl) {
+    const img = document.createElement("img");
+    img.src = imageUrl;
+    img.style.cssText = `width:${S}px;height:${S}px;object-fit:cover;transform:rotate(45deg);`;
+    inner.appendChild(img);
+  } else {
+    const span = document.createElement("span");
+    span.style.cssText = "transform:rotate(45deg);font-size:19px;line-height:1;";
+    span.textContent = emoji;
+    inner.appendChild(span);
+  }
+
   wrapper.appendChild(inner);
   return wrapper;
 }
@@ -57,6 +66,7 @@ function toLineGeoJSON(coords: [number, number][]) {
 interface Item {
   id: string; title: string; category: string;
   lat: number | null; lng: number | null;
+  imageUrl?: string | null;
 }
 interface NavDest { lat: number; lng: number; title: string; }
 
@@ -206,7 +216,7 @@ export default function GHMapLibre({
     destMarkerRef.current?.remove();
     destMarkerRef.current = null;
     if (!navDest) return;
-    destMarkerRef.current = new maplibregl.Marker({ element: makePinEl("🎯", "#FFB347"), anchor: "bottom", offset: [0, -8], pitchAlignment: "viewport", rotationAlignment: "viewport" })
+    destMarkerRef.current = new maplibregl.Marker({ element: makePinEl("🎯", "#FFB347"), anchor: "bottom", offset: [0, -9], pitchAlignment: "viewport", rotationAlignment: "viewport" })
       .setLngLat([navDest.lng, navDest.lat]).addTo(map);
   }, [navDest]);
 
@@ -225,10 +235,10 @@ export default function GHMapLibre({
       .filter(it => it.lat != null && it.lng != null && !existing.has(it.id))
       .forEach(it => {
         const pin = CAT_PIN[it.category] ?? { emoji: "📦", bg: "#EDE6D2" };
-        const el = makePinEl(pin.emoji, pin.bg);
+        const el = makePinEl(pin.emoji, pin.bg, it.imageUrl);
         if (onItemClick) el.addEventListener("click", () => onItemClick(it.id));
         existing.set(it.id,
-          new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -8], pitchAlignment: "viewport", rotationAlignment: "viewport" })
+          new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -9], pitchAlignment: "viewport", rotationAlignment: "viewport" })
             .setLngLat([it.lng!, it.lat!]).addTo(map)
         );
       });

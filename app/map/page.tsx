@@ -416,6 +416,13 @@ function MapPageInner() {
   const isHidden = sheetPct >= (DEFAULT + HIDDEN) / 2;
   const isFull   = sheetPct <= (FULL + DEFAULT) / 2;
 
+  const mapItems = useMemo(() => items.map(it => ({
+    ...it,
+    imageUrl: it.item_images?.find(img => img.is_primary)?.url
+      ?? it.item_images?.[0]?.url
+      ?? null,
+  })), [items]);
+
   const displayed = items.filter(it =>
     (cat === "all" || it.category === cat) &&
     (!search || it.title.includes(search) || it.address.includes(search))
@@ -464,7 +471,7 @@ function MapPageInner() {
       <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <GHMap
           userPos={userPos}
-          items={items}
+          items={mapItems}
           onItemClick={id => router.push(`/items/${id}`)}
           navRoute={navRoute}
           navDest={navDest}
