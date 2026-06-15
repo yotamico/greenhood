@@ -207,7 +207,7 @@ function MapPageInner() {
 
   /* street clearance mode — floating button */
   const [streetModeActive, setStreetModeActive] = useState(false);
-  const [streetModeDay,    setStreetModeDay]    = useState<"היום"|"מחר"|"מחרתיים">("היום");
+  const [streetModeDay,    setStreetModeDay]    = useState<"היום"|"מחר"|"מחרתיים">("מחר");
   const [clearanceStreets, setClearanceStreets] = useState<[number,number][][]>([]);
   const [streetLoading,    setStreetLoading]    = useState(false);
   const [streetError,      setStreetError]      = useState(false);
