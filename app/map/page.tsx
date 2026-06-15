@@ -207,7 +207,7 @@ function MapPageInner() {
 
   /* street clearance mode — floating button */
   const [streetModeActive, setStreetModeActive] = useState(false);
-  const [streetModeDay,    setStreetModeDay]    = useState<"היום"|"מחר"|"מחרתיים">("מחר");
+  const [streetModeDay,    setStreetModeDay]    = useState<"היום"|"מחר"|"מחרתיים">("היום");
   const [clearanceStreets, setClearanceStreets] = useState<[number,number][][]>([]);
   const [streetLoading,    setStreetLoading]    = useState(false);
   const [streetError,      setStreetError]      = useState(false);
@@ -341,8 +341,10 @@ function MapPageInner() {
     routeDestRef.current = key;
 
     const [uLat, uLng] = userPos;
+    const controller = new AbortController();
     fetch(
-      `https://router.project-osrm.org/route/v1/driving/${uLng},${uLat};${navDest.lng},${navDest.lat}?overview=full&geometries=geojson&steps=true`
+      `https://router.project-osrm.org/route/v1/driving/${uLng},${uLat};${navDest.lng},${navDest.lat}?overview=full&geometries=geojson&steps=true`,
+      { signal: controller.signal }
     )
       .then(r => r.json())
       .then(d => {
@@ -355,11 +357,13 @@ function MapPageInner() {
         setNavInfo({ dist: route.distance, dur: route.duration });
         const steps: OsrmStep[] = route.legs?.[0]?.steps ?? [];
         setNavSteps(steps);
-        // skip "depart" step — start at first real maneuver
         const firstReal = steps.findIndex(s => s.maneuver.type !== "depart");
         setCurrentStepIdx(firstReal > 0 ? firstReal : 0);
       })
-      .catch(() => { routeDestRef.current = null; }); // allow retry on error
+      .catch(err => {
+        if (err.name !== "AbortError") routeDestRef.current = null; // allow retry on real error
+      });
+    return () => controller.abort();
   }, [navDest, userPos]);
 
   /* advance nav step when user reaches the maneuver point */
@@ -389,8 +393,8 @@ function MapPageInner() {
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(50)
-      .then(({ data }) => {
-        setItems((data as Item[]) ?? []);
+      .then(({ data, error }) => {
+        if (!error) setItems((data as Item[]) ?? []);
       });
   }, [authed]);
 
@@ -423,25 +427,28 @@ function MapPageInner() {
       ?? null,
   })), [items]);
 
-  const displayed = items.filter(it =>
+  const displayed = useMemo(() => items.filter(it =>
     (cat === "all" || it.category === cat) &&
     (!search || it.title.includes(search) || it.address.includes(search))
-  );
+  ), [items, cat, search]);
 
-  const todayStr = new Date().toISOString().split("T")[0];
-  const clearanceDays = clearanceActive
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+
+  const clearanceDays = useMemo(() => clearanceActive
     ? [...new Set(
         items
           .filter(it => it.pickup_day && it.lat != null && it.lng != null && it.pickup_day >= todayStr)
           .map(it => it.pickup_day!)
       )].sort().slice(0, 4)
-    : [];
+    : [], [clearanceActive, items, todayStr]);
 
-  const clearanceRoute: [number,number][] = (clearanceActive && clearanceDay)
+  const clearanceRoute = useMemo((): [number,number][] => (clearanceActive && clearanceDay)
     ? items
         .filter(it => it.pickup_day === clearanceDay && it.lat != null && it.lng != null)
         .map(it => [it.lat!, it.lng!])
-    : [];
+    : [], [clearanceActive, clearanceDay, items]);
+
+  const onItemClick = useCallback((id: string) => router.push(`/items/${id}`), [router]);
 
   function toggleClearance() {
     if (clearanceActive) {
@@ -472,7 +479,7 @@ function MapPageInner() {
         <GHMap
           userPos={userPos}
           items={mapItems}
-          onItemClick={id => router.push(`/items/${id}`)}
+          onItemClick={onItemClick}
           navRoute={navRoute}
           navDest={navDest}
           centerTrigger={centerTrigger}

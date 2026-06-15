@@ -79,7 +79,6 @@ interface Props {
   centerTrigger?:    number;
   clearanceRoute?:   [number, number][];
   clearanceStreets?: [number, number][][];
-  streetModeRoute?:  [number, number][] | null;
   navMode?:          boolean;
   heading?:          number | null;
 }
@@ -89,7 +88,6 @@ export default function GHMapLibre({
   navRoute, navDest,
   centerTrigger = 0,
   clearanceRoute, clearanceStreets,
-  streetModeRoute,
   navMode = false,
   heading = null,
 }: Props) {
@@ -135,13 +133,6 @@ export default function GHMapLibre({
       });
       map.addLayer({ id: "clearance-streets-line", type: "line", source: "clearance-streets",
         paint: { "line-color": "#6B9956", "line-width": 6, "line-opacity": 0.92 } });
-
-      /* street-mode route — single continuous OSRM-routed line */
-      map.addSource("street-mode-route", { type: "geojson", data: toLineGeoJSON([]) });
-      map.addLayer({ id: "street-mode-route-shadow", type: "line", source: "street-mode-route",
-        paint: { "line-color": "#2D2A24", "line-width": 10, "line-opacity": 0.12 } });
-      map.addLayer({ id: "street-mode-route-line", type: "line", source: "street-mode-route",
-        paint: { "line-color": "#6B9956", "line-width": 5, "line-opacity": 0.95 } });
 
       setMapLoaded(true);
     });
@@ -271,13 +262,6 @@ export default function GHMapLibre({
     (mapRef.current?.getSource("clearance-streets") as maplibregl.GeoJSONSource | undefined)
       ?.setData({ type: "FeatureCollection", features });
   }, [clearanceStreets, mapLoaded]);
-
-  /* ── street-mode continuous route ── */
-  useEffect(() => {
-    if (!mapLoaded) return;
-    (mapRef.current?.getSource("street-mode-route") as maplibregl.GeoJSONSource | undefined)
-      ?.setData(toLineGeoJSON(streetModeRoute ?? []));
-  }, [streetModeRoute, mapLoaded]);
 
   return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 }
