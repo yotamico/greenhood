@@ -21,6 +21,8 @@ interface Item {
   address: string; pickup_day: string | null; status: string;
   created_at: string; reporter_id: string;
   lat: number | null; lng: number | null;
+  moderation_status: "pending" | "approved" | "rejected";
+  moderation_reason: string | null;
 }
 interface Image { url: string; position: number; is_primary: boolean; }
 interface Reporter { name: string | null; avatar_color: string | null; xp: number; }
@@ -367,6 +369,38 @@ export default function ItemDetailPage() {
             <span>·</span>
             <span>📍 {item.address.split(",")[0]}</span>
             {savesCount > 0 && <><span>·</span><span>♡ {savesCount} שמרו</span></>}
+          </div>
+        )}
+
+        {/* Owner: moderation status banner */}
+        {isOwner && item.moderation_status !== "approved" && (
+          <div style={{
+            marginBottom:14, padding:"12px 14px",
+            background: item.moderation_status === "rejected" ? "var(--accent-tint)" : "var(--warning-tint)",
+            border: `2px solid ${item.moderation_status === "rejected" ? "var(--accent)" : "var(--warning)"}`,
+            borderRadius:12,
+            display:"flex", flexDirection:"column", gap:6,
+          }}>
+            <div style={{ fontWeight:800, fontSize:13, color:"var(--ink)", display:"flex", alignItems:"center", gap:6 }}>
+              {item.moderation_status === "rejected" ? "❌ הפריט לא אושר" : "⏳ הפריט בבדיקה אוטומטית"}
+            </div>
+            {item.moderation_reason && (
+              <div style={{ fontSize:12, color:"var(--ink-soft)", fontWeight:500, lineHeight:1.5 }}>
+                {item.moderation_reason}
+              </div>
+            )}
+            {item.moderation_status === "rejected" && (
+              <button
+                onClick={() => router.push(`/items/${id}/edit`)}
+                style={{
+                  alignSelf:"flex-start", marginTop:2,
+                  padding:"6px 14px", borderRadius:999,
+                  background:"var(--ink)", color:"var(--paper)",
+                  border:"none", fontFamily:"var(--font-sans)",
+                  fontWeight:700, fontSize:12, cursor:"pointer",
+                }}
+              >ערוך ושלח מחדש</button>
+            )}
           </div>
         )}
 

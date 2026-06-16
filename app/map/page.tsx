@@ -391,6 +391,7 @@ function MapPageInner() {
       .from("items")
       .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day,item_images(url,is_primary,position)")
       .eq("status", "active")
+      .eq("moderation_status", "approved")
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data, error }) => {

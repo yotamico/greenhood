@@ -18,6 +18,7 @@ const CAT_COLOR: Record<string,string> = {
 
 const FILTERS = [
   { key:"all",   label:"הכל" },
+  { key:"saved", label:"saved" },   // heart icon rendered separately
   { key:"urgent",label:"🔥 פינוי קרוב" },
   { key:"furniture",label:"ריהוט" },
   { key:"books", label:"ספרים" },
@@ -59,6 +60,7 @@ export default function FeedPage() {
     supabase.from("items")
       .select("id,title,category,condition,address,created_at,pickup_day,item_images(url,is_primary)")
       .eq("status","active")
+      .eq("moderation_status","approved")
       .order("created_at",{ascending:false})
       .limit(60)
       .then(({ data }) => setItems((data as Item[]) ?? []));
