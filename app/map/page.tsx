@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense, memo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -175,31 +175,7 @@ function MapPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userPos]);
 
-  /* idle auto-center — re-centers after 5 s of no screen interaction */
-  useEffect(() => {
-    function onInteraction() {
-      lastInteractTimeRef.current = Date.now();
-    }
-    document.addEventListener("touchstart", onInteraction, { passive: true });
-    document.addEventListener("pointerdown", onInteraction, { passive: true });
-
-    const iv = setInterval(() => {
-      if (!hasInitialCentered.current) return;
-      if (!userPosRef.current) return;
-      if (navDestRef.current) return; // skip during active navigation
-      if (Date.now() - lastInteractTimeRef.current >= 5000) {
-        setCenterTrigger(t => t + 1);
-        lastInteractTimeRef.current = Date.now(); // prevent continuous firing
-      }
-    }, 1000);
-
-    return () => {
-      document.removeEventListener("touchstart", onInteraction);
-      document.removeEventListener("pointerdown", onInteraction);
-      clearInterval(iv);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  /* (idle auto-center removed — was firing flyTo every 5s of inactivity, causing constant 60fps map animation) */
 
   /* clearance route mode (chip-based, uses pickup_day) */
   const [clearanceActive, setClearanceActive] = useState(false);
@@ -284,19 +260,23 @@ function MapPageInner() {
     }
   }, []);
 
-  /* geolocation — watch position for live navigation */
+  /* geolocation — watch position for live navigation.
+     Throttle: skip state update if moved less than 8m (prevents re-renders while stationary). */
   useEffect(() => {
     if (!navigator.geolocation) { setUserPos([31.9297, 34.8307]); return; }
+    const MIN_DELTA = 8 / 111320; // ~8 metres in degrees
     const id = navigator.geolocation.watchPosition(
       pos => {
         const newPos: [number,number] = [pos.coords.latitude, pos.coords.longitude];
-        setUserPos(newPos);
+        const prev = prevPosRef.current;
+        const moved = !prev
+          || Math.abs(newPos[0] - prev[0]) > MIN_DELTA
+          || Math.abs(newPos[1] - prev[1]) > MIN_DELTA;
+        if (moved) setUserPos(newPos);
         if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
           setHeading(pos.coords.heading);
-        } else if (prevPosRef.current) {
-          const [lat1, lng1] = prevPosRef.current;
-          const [lat2, lng2] = newPos;
-          const dx = lng2 - lng1, dy = lat2 - lat1;
+        } else if (prev && moved) {
+          const dx = newPos[1] - prev[1], dy = newPos[0] - prev[0];
           if (Math.abs(dx) > 0.000005 || Math.abs(dy) > 0.000005) {
             setHeading((Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360);
           }
@@ -450,6 +430,7 @@ function MapPageInner() {
     : [], [clearanceActive, clearanceDay, items]);
 
   const onItemClick = useCallback((id: string) => router.push(`/items/${id}`), [router]);
+  const hasActiveItems = useMemo(() => displayed.some(it => it.status === "active"), [displayed]);
 
   function toggleClearance() {
     if (clearanceActive) {
@@ -918,7 +899,7 @@ function MapPageInner() {
               {displayed.length} פריטים
             </span>
           </div>
-          {displayed.some(it => it.status === "active") && (
+          {hasActiveItems && (
             <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500, marginTop: 2 }}>
               מוצג: <span style={{ color: "var(--accent-dark)", fontWeight: 700 }}>עדכני ביותר</span>
             </div>
@@ -978,7 +959,7 @@ const CAT_COLOR: Record<string, string> = {
   kitchen: "var(--warning-tint)", kids: "var(--accent-tint)",
 };
 
-function GHItemCard({ item }: { item: Item }) {
+const GHItemCard = memo(function GHItemCard({ item }: { item: Item }) {
   const router = useRouter();
   const emoji = CAT_EMOJI[item.category] ?? "📦";
   const color = CAT_COLOR[item.category] ?? "var(--paper-2)";
@@ -1004,7 +985,7 @@ function GHItemCard({ item }: { item: Item }) {
       {/* thumbnail: real photo or category emoji */}
       {primaryPhoto ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={primaryPhoto} alt={item.title} style={{
+        <img src={primaryPhoto} alt={item.title} loading="lazy" style={{
           width: 72, height: 72, borderRadius: 12, flexShrink: 0,
           objectFit: "cover", border: "2px solid var(--ink)",
           boxShadow: "var(--sh-sm)",
@@ -1043,7 +1024,7 @@ function GHItemCard({ item }: { item: Item }) {
       </div>
     </button>
   );
-}
+});
 
 function EmptyState() {
   const router = useRouter();
