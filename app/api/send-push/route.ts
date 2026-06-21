@@ -3,26 +3,29 @@ import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
 
 export async function POST(req: NextRequest) {
-  const pubKey = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
+  const pubKey  = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
   const privKey = (process.env.VAPID_PRIVATE_KEY ?? "").trim();
   const subject = (process.env.VAPID_SUBJECT ?? "").trim();
-  console.log("VAPID pub len:", pubKey.length, "priv len:", privKey.length, "subject:", subject);
+  if (!pubKey || !privKey || !subject) {
+    return NextResponse.json({ ok: false, error: "VAPID keys not configured" }, { status: 500 });
+  }
   webpush.setVapidDetails(subject, pubKey, privKey);
 
+  // Use service role key so RLS doesn't block reading other users' subscriptions
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    serviceKey
   );
+
   const { item_id, sender_id, content, item_title } = await req.json();
   if (!item_id || !sender_id) return NextResponse.json({ ok: false });
 
-  // Find who to notify: the item reporter (if they're not the sender)
   const { data: item } = await supabaseAdmin
     .from("items").select("reporter_id").eq("id", item_id).single();
   if (!item) return NextResponse.json({ ok: false });
 
   const recipient_id = item.reporter_id === sender_id ? null : item.reporter_id;
-  // Only notify reporter for now (they own the item and want to know about interest)
   if (!recipient_id) return NextResponse.json({ ok: true, skipped: true });
 
   const { data: subs } = await supabaseAdmin
@@ -32,14 +35,29 @@ export async function POST(req: NextRequest) {
   const payload = JSON.stringify({
     title: `💬 ${item_title ?? "פריט"}`,
     body: content.length > 80 ? content.slice(0, 80) + "…" : content,
-    url: `/chat/${item_id}`,
+    url: `/items/${item_id}`,
   });
 
-  await Promise.allSettled(
+  const results = await Promise.allSettled(
     subs.map(({ subscription }) =>
       webpush.sendNotification(subscription as webpush.PushSubscription, payload)
     )
   );
 
-  return NextResponse.json({ ok: true });
+  // Remove expired/invalid subscriptions (410 Gone)
+  const expired = results
+    .map((r, i) => ({ r, sub: subs[i] }))
+    .filter(({ r }) => r.status === "rejected" && (r as PromiseRejectedResult).reason?.statusCode === 410);
+  if (expired.length) {
+    await Promise.allSettled(
+      expired.map(({ sub }) =>
+        supabaseAdmin.from("push_subscriptions")
+          .delete()
+          .eq("endpoint", (sub.subscription as { endpoint: string }).endpoint)
+      )
+    );
+  }
+
+  const sent = results.filter(r => r.status === "fulfilled").length;
+  return NextResponse.json({ ok: true, sent });
 }

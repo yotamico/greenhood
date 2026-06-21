@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
@@ -21,6 +21,47 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [myItems, setMyItems] = useState<{ id:string; title:string; status:string }[]>([]);
   const [unreadItems, setUnreadItems] = useState<Set<string>>(new Set());
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
+  const [notifLoading, setNotifLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setNotifPerm(!("Notification" in window) ? "unsupported" : Notification.permission);
+    }
+  }, []);
+
+  const handleEnableNotifications = useCallback(async () => {
+    if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+    setNotifLoading(true);
+    try {
+      await navigator.serviceWorker.register("/sw.js");
+      const perm = await Notification.requestPermission();
+      setNotifPerm(perm);
+      if (perm === "granted") {
+        const reg = await navigator.serviceWorker.ready;
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+        const padding = "=".repeat((4 - (vapidKey.length % 4)) % 4);
+        const raw = atob((vapidKey + padding).replace(/-/g, "+").replace(/_/g, "/"));
+        const key = Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key as unknown as ArrayBuffer });
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          let lat: number | null = null, lng: number | null = null;
+          try {
+            const pos = await new Promise<GeolocationPosition>((res, rej) =>
+              navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
+            );
+            lat = pos.coords.latitude; lng = pos.coords.longitude;
+          } catch { /* optional */ }
+          await supabase.from("push_subscriptions").upsert(
+            { user_id: session.user.id, endpoint: sub.endpoint, subscription: sub.toJSON(), lat, lng },
+            { onConflict: "user_id,endpoint" }
+          );
+        }
+      }
+    } catch { /* ignore */ }
+    setNotifLoading(false);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -126,16 +167,56 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
-          <button
-            onClick={handleSignOut}
-            style={{
-              background:"var(--surface)", border:"1.5px solid var(--ink)",
-              borderRadius:"var(--r-sm)", padding:"6px 12px",
-              fontSize:12, fontWeight:700, cursor:"pointer",
-              fontFamily:"var(--font-sans)",
-              boxShadow:"var(--sh-sm)",
-            }}
-          >יציאה</button>
+          <div style={{ display:"flex", flexDirection:"column", gap:6, alignItems:"flex-end" }}>
+            <button
+              onClick={handleSignOut}
+              style={{
+                background:"var(--surface)", border:"1.5px solid var(--ink)",
+                borderRadius:"var(--r-sm)", padding:"6px 12px",
+                fontSize:12, fontWeight:700, cursor:"pointer",
+                fontFamily:"var(--font-sans)",
+                boxShadow:"var(--sh-sm)",
+              }}
+            >יציאה</button>
+
+            {/* Notification toggle */}
+            {notifPerm !== "unsupported" && (
+              notifPerm === "granted" ? (
+                <div style={{
+                  display:"flex", alignItems:"center", gap:5,
+                  padding:"5px 10px", borderRadius:"var(--r-sm)",
+                  background:"var(--primary-tint)", border:"1.5px solid var(--primary)",
+                  fontSize:11, fontWeight:700, color:"var(--primary-dark)",
+                }}>
+                  🔔 התראות פעילות
+                </div>
+              ) : notifPerm === "denied" ? (
+                <div style={{
+                  fontSize:10, fontWeight:600, color:"var(--muted)",
+                  textAlign:"center", maxWidth:90, lineHeight:1.3,
+                }}>
+                  התראות חסומות בדפדפן
+                </div>
+              ) : (
+                <button
+                  onClick={handleEnableNotifications}
+                  disabled={notifLoading}
+                  style={{
+                    background:"var(--ink)", color:"var(--paper)",
+                    border:"1.5px solid var(--ink)",
+                    borderRadius:"var(--r-sm)", padding:"6px 10px",
+                    fontSize:11, fontWeight:700, cursor:"pointer",
+                    fontFamily:"var(--font-sans)",
+                    boxShadow:"var(--sh-sm)",
+                    opacity: notifLoading ? 0.6 : 1,
+                    display:"flex", alignItems:"center", gap:4,
+                  }}
+                >
+                  {notifLoading ? "…" : "🔔 הפעל התראות"}
+                </button>
+              )
+            )}
+          </div>
         </div>
 
         {/* XP bar */}

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="40" fill="#F5F2E8"/>
+  <rect width="192" height="192" rx="40" fill="none" stroke="#2D2A24" stroke-width="8"/>
+  <!-- Leaf shape -->
+  <path d="M96 36 C96 36 148 60 148 108 C148 140 124 162 96 162 C68 162 44 140 44 108 C44 60 96 36 96 36 Z"
+        fill="#6B9956" stroke="#2D2A24" stroke-width="7" stroke-linejoin="round"/>
+  <!-- Leaf vein -->
+  <path d="M96 162 C96 162 96 90 96 56" stroke="#2D2A24" stroke-width="5" stroke-linecap="round"/>
+  <!-- Side veins -->
+  <path d="M96 100 C96 100 72 85 58 78" stroke="#2D2A24" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M96 120 C96 120 118 105 132 98" stroke="#2D2A24" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M96 80 C96 80 116 68 126 62" stroke="#2D2A24" stroke-width="3.5" stroke-linecap="round"/>
+</svg>
