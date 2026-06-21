@@ -74,6 +74,7 @@ interface Props {
   userPos:           [number, number] | null;
   items:             Item[];
   onItemClick?:      (id: string) => void;
+  selectedItemId?:   string | null;
   navRoute?:         [number, number][] | null;
   navDest?:          NavDest | null;
   centerTrigger?:    number;
@@ -84,7 +85,7 @@ interface Props {
 }
 
 export default function GHMapLibre({
-  userPos, items, onItemClick,
+  userPos, items, onItemClick, selectedItemId,
   navRoute, navDest,
   centerTrigger = 0,
   clearanceRoute, clearanceStreets,
@@ -262,6 +263,23 @@ export default function GHMapLibre({
     (mapRef.current?.getSource("clearance-streets") as maplibregl.GeoJSONSource | undefined)
       ?.setData({ type: "FeatureCollection", features });
   }, [clearanceStreets, mapLoaded]);
+
+  /* ── selected pin highlight ── */
+  useEffect(() => {
+    itemMarkersRef.current.forEach((marker, id) => {
+      const inner = marker.getElement().firstElementChild as HTMLElement | null;
+      if (!inner) return;
+      if (id === selectedItemId) {
+        inner.style.border = "3px solid #6B9956";
+        inner.style.boxShadow = "0 0 0 3px rgba(107,153,86,0.35), 2px 2px 0 rgba(45,42,36,0.18)";
+        inner.style.transform = "rotate(-45deg) scale(1.25)";
+      } else {
+        inner.style.border = "2.5px solid #2D2A24";
+        inner.style.boxShadow = "2px 2px 0 rgba(45,42,36,0.18)";
+        inner.style.transform = "rotate(-45deg)";
+      }
+    });
+  }, [selectedItemId]);
 
   return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 }

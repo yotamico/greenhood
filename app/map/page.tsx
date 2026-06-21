@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, Suspense, memo } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -157,6 +157,7 @@ function MapPageInner() {
   const dragRef = useRef({ startY: 0, startPct: DEFAULT });
 
   const [centerTrigger, setCenterTrigger] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   /* ── auto-center refs ── */
   const hasInitialCentered  = useRef(false);
@@ -429,7 +430,21 @@ function MapPageInner() {
         .map(it => [it.lat!, it.lng!])
     : [], [clearanceActive, clearanceDay, items]);
 
-  const onItemClick = useCallback((id: string) => router.push(`/items/${id}`), [router]);
+  const onItemClick = useCallback((id: string) => {
+    setExpandedId(prev => prev === id ? null : id);
+    setSheetPct(prev => prev >= (DEFAULT + HIDDEN) / 2 ? DEFAULT : prev);
+  }, []);
+
+  const onNavigate = useCallback((lat: number, lng: number, title: string) => {
+    setExpandedId(null);
+    routeDestRef.current = null;
+    setNavRoute(null);
+    setNavInfo(null);
+    setNavSteps([]);
+    setCurrentStepIdx(0);
+    setNavDest({ lat, lng, title });
+    setSheetPct(HIDDEN);
+  }, []);
   const hasActiveItems = useMemo(() => displayed.some(it => it.status === "active"), [displayed]);
 
   function toggleClearance() {
@@ -462,6 +477,7 @@ function MapPageInner() {
           userPos={userPos}
           items={mapItems}
           onItemClick={onItemClick}
+          selectedItemId={expandedId}
           navRoute={navRoute}
           navDest={navDest}
           centerTrigger={centerTrigger}
@@ -919,7 +935,15 @@ function MapPageInner() {
             <EmptyState />
           ) : (
             displayed.map(item => (
-              <GHItemCard key={item.id} item={item} />
+              <GHItemCard
+                key={item.id}
+                item={item}
+                isExpanded={expandedId === item.id}
+                dim={expandedId !== null && expandedId !== item.id}
+                onExpand={() => setExpandedId(item.id)}
+                onCollapse={() => setExpandedId(null)}
+                onNavigate={onNavigate}
+              />
             ))
           )}
         </div>
@@ -958,53 +982,280 @@ const CAT_COLOR: Record<string, string> = {
   sports: "var(--info-tint)", electronics: "var(--paper-2)",
   kitchen: "var(--warning-tint)", kids: "var(--accent-tint)",
 };
+const PHOTO_BG = [
+  "var(--primary-light)", "var(--warning-tint)", "var(--accent-tint)",
+  "var(--paper-2)", "var(--info-tint)",
+];
 
-const GHItemCard = memo(function GHItemCard({ item }: { item: Item }) {
+interface CardProps {
+  item: Item;
+  isExpanded: boolean;
+  dim: boolean;
+  onExpand: () => void;
+  onCollapse: () => void;
+  onNavigate: (lat: number, lng: number, title: string) => void;
+}
+
+function GHItemCard({ item, isExpanded, dim, onExpand, onCollapse, onNavigate }: CardProps) {
   const router = useRouter();
-  const emoji = CAT_EMOJI[item.category] ?? "📦";
-  const color = CAT_COLOR[item.category] ?? "var(--paper-2)";
-  const age   = timeAgo(item.created_at);
-  const photos = item.item_images ?? [];
-  const primaryPhoto = photos.find(i => i.is_primary)?.url ?? photos[0]?.url ?? null;
+  const [imgIdx, setImgIdx] = useState(0);
+  const [drag, setDrag]     = useState(0);
+  const dragStartRef        = useRef<number | null>(null);
 
+  const emoji   = CAT_EMOJI[item.category] ?? "📦";
+  const bgColor = CAT_COLOR[item.category] ?? "var(--paper-2)";
+  const age     = timeAgo(item.created_at);
+  const photos  = [...(item.item_images ?? [])].sort((a, b) => a.position - b.position);
+  const primaryPhoto = photos.find(i => i.is_primary)?.url ?? photos[0]?.url ?? null;
+  const n = photos.length;
+
+  const todayStr    = new Date().toISOString().split("T")[0];
+  const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+  const isUrgent    = item.pickup_day === todayStr || item.pickup_day === tomorrowStr;
+  const urgentText  = item.pickup_day === todayStr ? "🔥 פינוי היום" : "🔥 פינוי מחר";
+
+  useEffect(() => {
+    if (!isExpanded) { setImgIdx(0); setDrag(0); dragStartRef.current = null; }
+  }, [isExpanded]);
+
+  const step      = (d: number) => setImgIdx(i => (i + d + Math.max(n, 1)) % Math.max(n, 1));
+  const onPtrDown = (e: React.PointerEvent) => { dragStartRef.current = e.clientX; };
+  const onPtrMove = (e: React.PointerEvent) => {
+    if (dragStartRef.current == null) return;
+    setDrag(e.clientX - dragStartRef.current);
+  };
+  const onPtrUp = () => {
+    if (dragStartRef.current == null) return;
+    const d = drag; dragStartRef.current = null; setDrag(0);
+    if (Math.abs(d) > 48) step(d > 0 ? 1 : -1);
+  };
+
+  const currentUrl = photos[imgIdx]?.url ?? null;
+  const photoBg    = PHOTO_BG[imgIdx % PHOTO_BG.length];
+
+  if (isExpanded) {
+    return (
+      <div style={{
+        background: "var(--surface)", borderRadius: 18,
+        border: "2.5px solid var(--ink)", boxShadow: "5px 5px 0 var(--shadow-ink)",
+        overflow: "hidden", flexShrink: 0,
+        animation: "ghBloom .4s cubic-bezier(.22,1,.36,1)",
+      }}>
+        {/* hero gallery */}
+        <div
+          onPointerDown={onPtrDown} onPointerMove={onPtrMove}
+          onPointerUp={onPtrUp} onPointerLeave={onPtrUp}
+          style={{ position: "relative", touchAction: "pan-y", userSelect: "none" }}
+        >
+          <div style={{ overflow: "hidden", borderBottom: "2px solid var(--ink)" }}>
+            <div style={{
+              height: 240,
+              background: currentUrl ? "var(--paper-2)" : photoBg,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transform: `translateX(${drag}px)`,
+              transition: dragStartRef.current == null
+                ? "transform .3s cubic-bezier(.22,1,.36,1)" : "none",
+            }}>
+              {currentUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={currentUrl} alt={item.title}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <span style={{ fontSize: 96 }}>{emoji}</span>
+              )}
+            </div>
+          </div>
+
+          {/* arrows */}
+          {n > 1 && (
+            <>
+              <button onClick={e => { e.stopPropagation(); step(1); }} style={{
+                position: "absolute", top: "50%", transform: "translateY(-50%)",
+                right: 8, width: 30, height: 30,
+                background: "transparent", border: "none", padding: 0,
+                cursor: "pointer", fontSize: 24, fontWeight: 800,
+                color: "var(--ink)", lineHeight: 1, zIndex: 3,
+              }}>‹</button>
+              <button onClick={e => { e.stopPropagation(); step(-1); }} style={{
+                position: "absolute", top: "50%", transform: "translateY(-50%)",
+                left: 8, width: 30, height: 30,
+                background: "transparent", border: "none", padding: 0,
+                cursor: "pointer", fontSize: 24, fontWeight: 800,
+                color: "var(--ink)", lineHeight: 1, zIndex: 3,
+              }}>›</button>
+            </>
+          )}
+
+          {/* dots */}
+          {n > 1 && (
+            <div style={{
+              position: "absolute", bottom: 10, left: 0, right: 0, zIndex: 3,
+              display: "flex", gap: 5, justifyContent: "center",
+            }}>
+              {photos.map((_, i) => (
+                <span key={i} style={{
+                  display: "inline-block",
+                  width: i === imgIdx ? 16 : 6, height: 6, borderRadius: 3,
+                  background: i === imgIdx ? "var(--ink)" : "rgba(45,42,36,0.4)",
+                  border: "1px solid var(--ink)", transition: "width .2s ease",
+                }} />
+              ))}
+            </div>
+          )}
+
+          {/* share + close */}
+          <div style={{
+            position: "absolute", top: 10, left: 10, display: "flex", gap: 8, zIndex: 3,
+          }}>
+            <button
+              title="שתף"
+              onClick={e => {
+                e.stopPropagation();
+                if (typeof navigator !== "undefined" && navigator.share) {
+                  navigator.share({ title: item.title, url: `${window.location.origin}/items/${item.id}` });
+                }
+              }}
+              style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: "var(--surface)", border: "2px solid var(--ink)",
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/>
+                <circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); onCollapse(); }}
+              style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: "var(--surface)", border: "2px solid var(--ink)",
+                cursor: "pointer", fontSize: 15, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >✕</button>
+          </div>
+
+          {/* urgent pill */}
+          {isUrgent && (
+            <div style={{ position: "absolute", top: 10, right: 10, zIndex: 3 }}>
+              <span style={{
+                background: "var(--accent-tint)", color: "var(--accent-dark)",
+                border: "1.5px solid var(--accent)", borderRadius: 999,
+                fontSize: 11, fontWeight: 700, padding: "5px 10px",
+              }}>{urgentText}</span>
+            </div>
+          )}
+        </div>
+
+        {/* body */}
+        <div style={{ padding: 12 }}>
+          <div style={{
+            fontFamily: "var(--font-display)", fontWeight: 700,
+            fontSize: 22, lineHeight: 1.15,
+          }}>{item.title}</div>
+          <div style={{
+            marginTop: 6, fontSize: 12.5, color: "var(--muted)",
+            fontWeight: 500, display: "flex", flexWrap: "wrap", gap: 6,
+          }}>
+            <span>📍 {item.address.split(",")[0]}</span>
+            <span>·</span>
+            <span>{age}</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 12, marginBottom: 14, flexWrap: "wrap" }}>
+            <span style={{
+              padding: "2px 8px", borderRadius: 999,
+              background: "var(--paper-2)", border: "1.5px solid var(--ink)",
+              fontSize: 11, fontWeight: 700,
+            }}>{item.condition}</span>
+          </div>
+          {/* actions */}
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button
+              disabled={item.lat == null || item.lng == null}
+              onClick={() => item.lat != null && item.lng != null &&
+                onNavigate(item.lat, item.lng, item.title)}
+              style={{
+                flex: 1, height: 44, padding: "0 16px",
+                background: "var(--primary)", color: "var(--ink)",
+                border: "2px solid var(--ink)", borderRadius: "var(--r-md)",
+                boxShadow: "var(--sh-md)", fontFamily: "var(--font-sans)",
+                fontWeight: 700, fontSize: 14, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                opacity: item.lat == null ? 0.5 : 1,
+              }}
+            >
+              <svg width={18} height={18} viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="3 11 22 2 13 21 11 13 3 11"/>
+              </svg>
+              נווט
+            </button>
+            <button
+              title="פרטים נוספים ושיחה"
+              onClick={() => router.push(`/items/${item.id}`)}
+              style={{
+                width: 44, height: 44, flexShrink: 0,
+                background: "var(--surface)", color: "var(--ink)",
+                border: "2px solid var(--ink)", borderRadius: "var(--r-md)",
+                boxShadow: "var(--sh-sm)", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* collapsed row */
   return (
     <button
-      onClick={() => router.push(`/items/${item.id}`)}
+      onClick={onExpand}
       style={{
         display: "flex", gap: 12, padding: 12,
-        background: "var(--surface)",
-        border: "2px solid var(--ink)",
-        borderRadius: 16,
-        boxShadow: "var(--sh-md)",
-        cursor: "pointer",
-        textAlign: "right",
-        width: "100%",
+        background: "var(--surface)", border: "2px solid var(--ink)",
+        borderRadius: 16, boxShadow: "var(--sh-md)",
+        cursor: "pointer", textAlign: "right", width: "100%",
         fontFamily: "var(--font-sans)",
+        opacity: dim ? 0.5 : 1, transition: "opacity .3s ease",
       }}
     >
-      {/* thumbnail: real photo or category emoji */}
       {primaryPhoto ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={primaryPhoto} alt={item.title} loading="lazy" style={{
           width: 72, height: 72, borderRadius: 12, flexShrink: 0,
-          objectFit: "cover", border: "2px solid var(--ink)",
-          boxShadow: "var(--sh-sm)",
+          objectFit: "cover", border: "2px solid var(--ink)", boxShadow: "var(--sh-sm)",
         }} />
       ) : (
         <div style={{
           width: 72, height: 72, borderRadius: 12,
-          background: color, border: "2px solid var(--ink)",
+          background: bgColor, border: "2px solid var(--ink)",
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: 36, flexShrink: 0, boxShadow: "var(--sh-sm)",
         }}>{emoji}</div>
       )}
-
-      {/* info */}
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{
-          fontFamily: "var(--font-display)", fontWeight: 900,
-          fontSize: 15, lineHeight: 1.2, color: "var(--ink)",
-        }}>{item.title}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 8 }}>
+          <div style={{
+            fontFamily: "var(--font-display)", fontWeight: 900,
+            fontSize: 15, lineHeight: 1.2, color: "var(--ink)",
+          }}>{item.title}</div>
+          <svg width={18} height={18} viewBox="0 0 24 24" fill="none"
+            stroke="var(--muted)" strokeWidth={2} strokeLinecap="round"
+            style={{ flexShrink: 0, marginTop: 2 }}>
+            <path d="M6 9l6 6 6-6"/>
+          </svg>
+        </div>
         <div style={{
           fontSize: 12, color: "var(--muted)", fontWeight: 500,
           display: "flex", gap: 5, alignItems: "center",
@@ -1016,15 +1267,21 @@ const GHItemCard = memo(function GHItemCard({ item }: { item: Item }) {
         <div style={{ display: "flex", gap: 5, marginTop: 2, flexWrap: "wrap" }}>
           <span style={{
             padding: "2px 8px", borderRadius: 999,
-            background: "var(--paper-2)",
-            border: "1.5px solid var(--ink)",
+            background: "var(--paper-2)", border: "1.5px solid var(--ink)",
             fontSize: 11, fontWeight: 700,
           }}>{item.condition}</span>
+          {isUrgent && (
+            <span style={{
+              padding: "2px 8px", borderRadius: 999,
+              background: "var(--accent-tint)", border: "1.5px solid var(--accent)",
+              fontSize: 11, fontWeight: 700, color: "var(--accent-dark)",
+            }}>{urgentText}</span>
+          )}
         </div>
       </div>
     </button>
   );
-});
+}
 
 function EmptyState() {
   const router = useRouter();
