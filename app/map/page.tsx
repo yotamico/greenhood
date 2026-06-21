@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, Suspense } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, Suspense, memo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -938,10 +938,8 @@ function MapPageInner() {
               <GHItemCard
                 key={item.id}
                 item={item}
-                isExpanded={expandedId === item.id}
-                dim={expandedId !== null && expandedId !== item.id}
-                onExpand={() => setExpandedId(item.id)}
-                onCollapse={() => setExpandedId(null)}
+                expandedId={expandedId}
+                setExpandedId={setExpandedId}
                 onNavigate={onNavigate}
               />
             ))
@@ -989,18 +987,19 @@ const PHOTO_BG = [
 
 interface CardProps {
   item: Item;
-  isExpanded: boolean;
-  dim: boolean;
-  onExpand: () => void;
-  onCollapse: () => void;
+  expandedId: string | null;
+  setExpandedId: React.Dispatch<React.SetStateAction<string | null>>;
   onNavigate: (lat: number, lng: number, title: string) => void;
 }
 
-function GHItemCard({ item, isExpanded, dim, onExpand, onCollapse, onNavigate }: CardProps) {
+const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, onNavigate }: CardProps) {
   const router = useRouter();
   const [imgIdx, setImgIdx] = useState(0);
   const [drag, setDrag]     = useState(0);
   const dragStartRef        = useRef<number | null>(null);
+
+  const isExpanded = expandedId === item.id;
+  const dim        = expandedId !== null && expandedId !== item.id;
 
   const emoji   = CAT_EMOJI[item.category] ?? "📦";
   const bgColor = CAT_COLOR[item.category] ?? "var(--paper-2)";
@@ -1130,7 +1129,7 @@ function GHItemCard({ item, isExpanded, dim, onExpand, onCollapse, onNavigate }:
               </svg>
             </button>
             <button
-              onClick={e => { e.stopPropagation(); onCollapse(); }}
+              onClick={e => { e.stopPropagation(); setExpandedId(null); }}
               style={{
                 width: 32, height: 32, borderRadius: "50%",
                 background: "var(--surface)", border: "2px solid var(--ink)",
@@ -1220,7 +1219,7 @@ function GHItemCard({ item, isExpanded, dim, onExpand, onCollapse, onNavigate }:
   /* collapsed row */
   return (
     <button
-      onClick={onExpand}
+      onClick={() => setExpandedId(item.id)}
       style={{
         display: "flex", gap: 12, padding: 12,
         background: "var(--surface)", border: "2px solid var(--ink)",
@@ -1281,7 +1280,7 @@ function GHItemCard({ item, isExpanded, dim, onExpand, onCollapse, onNavigate }:
       </div>
     </button>
   );
-}
+});
 
 function EmptyState() {
   const router = useRouter();
