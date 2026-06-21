@@ -6,8 +6,8 @@ self.addEventListener("push", function (event) {
   event.waitUntil(
     self.registration.showNotification(data.title || "GreenHOOD", {
       body: data.body || "הודעה חדשה",
-      icon: "/icon-192.svg",
-      badge: "/icon-192.svg",
+      icon: "/api/icon-png",
+      badge: "/api/icon-png",
       data: { url: data.url || "/" },
       dir: "rtl",
       lang: "he",
