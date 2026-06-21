@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -16,6 +16,8 @@ const CATS = [
 ];
 const CONDITIONS = ["שלם","כמעט שלם","פגום אך שמיש","לחלקים","לשיפוץ"];
 const PRESET_TAGS = ["וינטג׳","עץ","צריך 2 אנשים","פרק ורכב","כבד מאוד","פשוט להרים"];
+
+interface ExistingImage { id: string; url: string; position: number; is_primary: boolean; }
 
 export default function EditItemPage() {
   const router = useRouter();
@@ -33,38 +35,97 @@ export default function EditItemPage() {
   const [address,     setAddress]     = useState("");
   const [tags, setTags] = useState<string[]>([]);
 
+  /* image state */
+  const [existingImgs,  setExistingImgs]  = useState<ExistingImage[]>([]);
+  const [removedIds,    setRemovedIds]    = useState<string[]>([]);
+  const [newPhotos,     setNewPhotos]     = useState<File[]>([]);
+  const [newPhotoUrls,  setNewPhotoUrls]  = useState<string[]>([]);
+  const addPhotoRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.replace("/login"); return; }
 
-      const { data: it } = await supabase.from("items").select("*").eq("id", id).single();
+      const [{ data: it }, { data: imgs }] = await Promise.all([
+        supabase.from("items").select("*").eq("id", id).single(),
+        supabase.from("item_images").select("id,url,position,is_primary").eq("item_id", id).order("position"),
+      ]);
       if (!it || it.reporter_id !== session.user.id) { router.replace(`/items/${id}`); return; }
 
       setTitle(it.title ?? "");
       setDescription(it.description ?? "");
       setCategory(it.category ?? "furniture");
-      // map stored condition id to Hebrew label if needed
       const condMap: Record<string,string> = { new:"שלם", like_new:"כמעט שלם", good:"פגום אך שמיש", fair:"לחלקים" };
       const storedCond = it.condition ?? "good";
       setCondition(CONDITIONS.includes(storedCond) ? storedCond : (condMap[storedCond] ?? "שלם"));
       setAddress(it.address ?? "");
       setTags(it.tags ?? []);
+      setExistingImgs((imgs ?? []) as ExistingImage[]);
       setLoading(false);
     }
     load();
   }, [id, router]);
 
+  function handleAddPhotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setNewPhotos(prev => [...prev, ...files]);
+    setNewPhotoUrls(prev => [...prev, ...files.map(f => URL.createObjectURL(f))]);
+    e.target.value = "";
+  }
+
+  function removeExisting(imgId: string) {
+    setRemovedIds(prev => [...prev, imgId]);
+    setExistingImgs(prev => prev.filter(i => i.id !== imgId));
+  }
+
+  function removeNew(idx: number) {
+    URL.revokeObjectURL(newPhotoUrls[idx]);
+    setNewPhotos(prev => prev.filter((_, i) => i !== idx));
+    setNewPhotoUrls(prev => prev.filter((_, i) => i !== idx));
+  }
+
   async function handleSave() {
     if (!title.trim() || !address.trim()) return;
     setSaving(true);
+
+    /* 1. update item fields */
+    const hasImageChanges = removedIds.length > 0 || newPhotos.length > 0;
     await supabase.from("items").update({
       title: title.trim(),
       description: description.trim() || null,
       category, condition,
       address: address.trim(),
       tags,
+      ...(hasImageChanges ? { moderation_status: "pending", moderation_reason: null } : {}),
     }).eq("id", id);
+
+    /* 2. delete removed images */
+    if (removedIds.length) {
+      await supabase.from("item_images").delete().in("id", removedIds);
+    }
+
+    /* 3. upload new photos */
+    const existingCount = existingImgs.length;
+    for (let i = 0; i < newPhotos.length; i++) {
+      const f    = newPhotos[i];
+      const ext  = f.name.split(".").pop() ?? "jpg";
+      const path = `${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("report-photos")
+        .upload(path, f, { upsert: true });
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from("report-photos").getPublicUrl(path);
+        await supabase.from("item_images").insert([{
+          item_id:    id,
+          url:        urlData.publicUrl,
+          position:   existingCount + i,
+          is_primary: existingCount === 0 && i === 0,
+        }]);
+      }
+    }
+
     router.replace(`/items/${id}`);
   }
 
@@ -133,8 +194,79 @@ export default function EditItemPage() {
         >{saving ? "שומר…" : "שמור"}</button>
       </div>
 
+      {/* hidden file input */}
+      <input
+        ref={addPhotoRef} type="file" accept="image/*" multiple
+        style={{ display:"none" }} onChange={handleAddPhotos}
+      />
+
       {/* Form */}
       <div style={{ padding:"20px 16px 120px", display:"flex", flexDirection:"column", gap:20 }}>
+
+        {/* Photos */}
+        <div>
+          <div style={labelStyle}>תמונות</div>
+          <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-start" }}>
+            {/* existing images */}
+            {existingImgs.map(img => (
+              <div key={img.id} style={{ position:"relative", width:80, height:80, flexShrink:0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.url} alt="" style={{
+                  width:80, height:80, objectFit:"cover",
+                  borderRadius:12, border:"2px solid var(--ink)",
+                }} />
+                <button onClick={() => removeExisting(img.id)} style={{
+                  position:"absolute", top:-6, right:-6,
+                  width:22, height:22, borderRadius:"50%",
+                  background:"var(--accent)", color:"white",
+                  border:"1.5px solid var(--ink)", cursor:"pointer",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:13, fontWeight:900, padding:0, lineHeight:1,
+                }}>✕</button>
+                {img.is_primary && (
+                  <div style={{
+                    position:"absolute", bottom:4, left:4,
+                    fontSize:9, fontWeight:800, color:"white",
+                    background:"rgba(45,42,36,0.7)", borderRadius:4, padding:"1px 5px",
+                  }}>ראשית</div>
+                )}
+              </div>
+            ))}
+            {/* new photos preview */}
+            {newPhotoUrls.map((url, idx) => (
+              <div key={url} style={{ position:"relative", width:80, height:80, flexShrink:0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" style={{
+                  width:80, height:80, objectFit:"cover",
+                  borderRadius:12, border:"2px solid var(--primary)",
+                }} />
+                <button onClick={() => removeNew(idx)} style={{
+                  position:"absolute", top:-6, right:-6,
+                  width:22, height:22, borderRadius:"50%",
+                  background:"var(--accent)", color:"white",
+                  border:"1.5px solid var(--ink)", cursor:"pointer",
+                  display:"flex", alignItems:"center", justifyContent:"center",
+                  fontSize:13, fontWeight:900, padding:0, lineHeight:1,
+                }}>✕</button>
+              </div>
+            ))}
+            {/* add button */}
+            <button onClick={() => addPhotoRef.current?.click()} style={{
+              width:80, height:80, borderRadius:12, flexShrink:0,
+              background:"var(--surface)", border:"2px dashed var(--ink)",
+              display:"flex", flexDirection:"column", alignItems:"center",
+              justifyContent:"center", gap:4, cursor:"pointer", padding:0,
+            }}>
+              <span style={{ fontSize:22, lineHeight:1 }}>📷</span>
+              <span style={{ fontSize:10, fontWeight:700, color:"var(--muted)" }}>הוסף</span>
+            </button>
+          </div>
+          {removedIds.length > 0 && (
+            <div style={{ fontSize:11, color:"var(--accent)", marginTop:6, fontWeight:600 }}>
+              {removedIds.length} תמונות יוסרו בשמירה
+            </div>
+          )}
+        </div>
 
         {/* Title */}
         <div>
