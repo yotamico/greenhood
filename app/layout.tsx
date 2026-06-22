@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "GreenHOOD",
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "black",
   },
   other: {
     "mobile-web-app-capable": "yes",
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1E3A22",
+  themeColor: "#F5F2E8",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
