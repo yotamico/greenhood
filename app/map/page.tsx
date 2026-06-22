@@ -1256,8 +1256,8 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
               נווט
             </button>
             <button
-              title="פרטים נוספים ושיחה"
-              onClick={() => router.push(`/items/${item.id}`)}
+              title="צ'אט על הפריט"
+              onClick={() => router.push(`/chat/${item.id}`)}
               style={{
                 width: 44, height: 44, flexShrink: 0,
                 background: "var(--surface)", color: "var(--ink)",
