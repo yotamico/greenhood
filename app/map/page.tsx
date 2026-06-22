@@ -1085,6 +1085,21 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
     return () => clearTimeout(t);
   }, [isExpanded]);
 
+  /* close when scrolled out of view */
+  useEffect(() => {
+    if (!isExpanded || !cardRef.current) return;
+    let hasBeenVisible = false;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        hasBeenVisible = true;
+      } else if (hasBeenVisible) {
+        setExpandedId(null);
+      }
+    }, { threshold: 0.1 });
+    observer.observe(cardRef.current);
+    return () => observer.disconnect();
+  }, [isExpanded, setExpandedId]);
+
   const step      = (d: number) => setImgIdx(i => (i + d + Math.max(n, 1)) % Math.max(n, 1));
   const onPtrDown = (e: React.PointerEvent) => { dragStartRef.current = e.clientX; };
   const onPtrMove = (e: React.PointerEvent) => {
