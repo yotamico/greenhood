@@ -85,6 +85,12 @@ html, body {
   box-shadow: var(--sh-md);
 }
 
+/* skip off-screen card rendering — CSS-native virtualization */
+.gh-item-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 100px;
+}
+
 .gh-input {
   width: 100%;
   padding: 0 16px;

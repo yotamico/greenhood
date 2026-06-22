@@ -950,6 +950,7 @@ function MapPageInner() {
           display: "flex",
           flexDirection: "column",
           gap: 10,
+          willChange: "transform",
         }}>
           {displayed.length === 0 ? (
             <EmptyState />
@@ -1094,7 +1095,7 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
 
   if (isExpanded) {
     return (
-      <div ref={cardRef} style={{
+      <div ref={cardRef} className="gh-item-card" style={{
         background: "var(--surface)", borderRadius: 18,
         border: "2.5px solid var(--ink)", boxShadow: "5px 5px 0 var(--shadow-ink)",
         overflow: "hidden", flexShrink: 0,
@@ -1280,13 +1281,15 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
   return (
     <button
       onClick={() => setExpandedId(item.id)}
+      className="gh-item-card"
       style={{
         display: "flex", gap: 12, padding: 12,
         background: "var(--surface)", border: "2px solid var(--ink)",
         borderRadius: 16, boxShadow: "var(--sh-md)",
         cursor: "pointer", textAlign: "right", width: "100%",
         fontFamily: "var(--font-sans)",
-        opacity: dim ? 0.5 : 1, transition: "opacity .3s ease",
+        opacity: dim ? 0.5 : 1,
+        transition: expandedId !== null ? "opacity .3s ease" : "none",
       }}
     >
       {primaryPhoto ? (
