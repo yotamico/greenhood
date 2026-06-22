@@ -169,51 +169,6 @@ function MapPageInner() {
     if (expandedId !== null) setSheetPct(FULL);
   }, [expandedId]);
 
-  /* non-passive touch drag on list — lets us call preventDefault to block scroll */
-  useEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    let startY = 0;
-    let startPct = DEFAULT;
-    let active = false;
-
-    const onStart = (e: TouchEvent) => {
-      startY   = e.touches[0].clientY;
-      startPct = sheetPctRef.current;
-      active   = false;
-    };
-    const onMove = (e: TouchEvent) => {
-      const dy     = e.touches[0].clientY - startY;
-      const atTop  = list.scrollTop < 1;
-      const notFull = startPct > FULL + 2;
-      if (!active) {
-        if (Math.abs(dy) < 8) return;
-        if (!(dy > 0 && atTop) && !(dy < 0 && notFull)) return;
-        active = true;
-        setDragging(true);
-      }
-      e.preventDefault();
-      const pct = startPct + (dy / window.innerHeight) * 100;
-      setSheetPct(Math.max(FULL, Math.min(HIDDEN, pct)));
-    };
-    const onEnd = () => {
-      if (!active) return;
-      active = false;
-      setDragging(false);
-      setSheetPct(curr => snapTo(curr));
-    };
-
-    list.addEventListener("touchstart", onStart, { passive: true });
-    list.addEventListener("touchmove",  onMove,  { passive: false });
-    list.addEventListener("touchend",   onEnd,   { passive: true });
-    list.addEventListener("touchcancel",onEnd,   { passive: true });
-    return () => {
-      list.removeEventListener("touchstart",  onStart);
-      list.removeEventListener("touchmove",   onMove);
-      list.removeEventListener("touchend",    onEnd);
-      list.removeEventListener("touchcancel", onEnd);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── auto-center refs ── */
   const hasInitialCentered  = useRef(false);
@@ -936,7 +891,7 @@ function MapPageInner() {
           onPointerUp={onDragEnd}
           onPointerCancel={onDragEnd}
           style={{
-            padding: "18px 0 16px",
+            padding: "20px 0 20px",
             cursor: dragging ? "grabbing" : "grab",
             touchAction: "none",
             userSelect: "none",
