@@ -154,9 +154,11 @@ function MapPageInner() {
   const [sheetPct, setSheetPct]   = useState(DEFAULT);
   const [dragging, setDragging]   = useState(false);
   const [userPos, setUserPos]     = useState<[number,number] | null>(null);
-  const dragRef     = useRef({ startY: 0, startPct: DEFAULT });
-  const sheetPctRef = useRef(DEFAULT);
+  const dragRef      = useRef({ startY: 0, startPct: DEFAULT });
+  const sheetPctRef  = useRef(DEFAULT);
+  const draggingRef  = useRef(false);
   sheetPctRef.current = sheetPct;
+  draggingRef.current = dragging;
   const listRef = useRef<HTMLDivElement>(null);
 
   const [centerTrigger, setCenterTrigger] = useState(0);
@@ -434,19 +436,19 @@ function MapPageInner() {
       });
   }, [authed]);
 
-  /* drag logic */
+  /* drag logic — both callbacks are stable (no state deps, use refs instead) */
   const onDragStart = useCallback((e: React.PointerEvent) => {
     e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = { startY: e.clientY, startPct: sheetPct };
+    dragRef.current = { startY: e.clientY, startPct: sheetPctRef.current };
     setDragging(true);
-  }, [sheetPct]);
+  }, []);
 
   const onDragMove = useCallback((e: React.PointerEvent) => {
-    if (!dragging) return;
+    if (!draggingRef.current) return;
     const dy  = e.clientY - dragRef.current.startY;
     const pct = dragRef.current.startPct + (dy / window.innerHeight) * 100;
     setSheetPct(Math.max(FULL, Math.min(HIDDEN, pct)));
-  }, [dragging]);
+  }, []);
 
   const onDragEnd = useCallback(() => {
     setDragging(false);
@@ -997,15 +999,12 @@ function MapPageInner() {
           {displayed.length === 0 ? (
             <EmptyState />
           ) : (
-            displayed.map(item => (
-              <GHItemCard
-                key={item.id}
-                item={item}
-                expandedId={expandedId}
-                setExpandedId={setExpandedId}
-                onNavigate={onNavigate}
-              />
-            ))
+            <ItemList
+              displayed={displayed}
+              expandedId={expandedId}
+              setExpandedId={setExpandedId}
+              onNavigate={onNavigate}
+            />
           )}
         </div>
       </div>
@@ -1054,6 +1053,29 @@ interface CardProps {
   setExpandedId: React.Dispatch<React.SetStateAction<string | null>>;
   onNavigate: (lat: number, lng: number, title: string) => void;
 }
+
+interface ListProps {
+  displayed: Item[];
+  expandedId: string | null;
+  setExpandedId: React.Dispatch<React.SetStateAction<string | null>>;
+  onNavigate: (lat: number, lng: number, title: string) => void;
+}
+
+const ItemList = memo(function ItemList({ displayed, expandedId, setExpandedId, onNavigate }: ListProps) {
+  return (
+    <>
+      {displayed.map(item => (
+        <GHItemCard
+          key={item.id}
+          item={item}
+          expandedId={expandedId}
+          setExpandedId={setExpandedId}
+          onNavigate={onNavigate}
+        />
+      ))}
+    </>
+  );
+});
 
 const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, onNavigate }: CardProps) {
   const router = useRouter();

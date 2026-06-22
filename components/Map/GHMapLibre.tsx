@@ -148,28 +148,31 @@ export default function GHMapLibre({
     };
   }, []); // eslint-disable-line
 
-  /* ── nav mode: center + pitch + bearing in ONE easeTo — two separate calls conflict ── */
+  /* ── nav mode: follow user with heading ── */
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapLoaded) return;
-    if (navMode && userPos) {
-      let [lat, lng] = userPos;
-      if (heading != null) {
-        const rad = heading * Math.PI / 180;
-        lat += (150 / 111320) * Math.cos(rad);
-        lng += (150 / (111320 * Math.cos(userPos[0] * Math.PI / 180))) * Math.sin(rad);
-      }
-      map.easeTo({
-        center: [lng, lat],
-        zoom: 17,
-        pitch: 50,
-        bearing: -(heading ?? 0),
-        duration: 150,
-      });
-    } else if (!navMode) {
-      map.easeTo({ pitch: 0, bearing: 0, duration: 500 });
+    if (!map || !mapLoaded || !navMode || !userPos) return;
+    let [lat, lng] = userPos;
+    if (heading != null) {
+      const rad = heading * Math.PI / 180;
+      lat += (150 / 111320) * Math.cos(rad);
+      lng += (150 / (111320 * Math.cos(userPos[0] * Math.PI / 180))) * Math.sin(rad);
     }
+    map.easeTo({
+      center: [lng, lat],
+      zoom: 17,
+      pitch: 50,
+      bearing: -(heading ?? 0),
+      duration: 150,
+    });
   }, [userPos, heading, navMode, mapLoaded]);
+
+  /* ── reset pitch/bearing when leaving nav mode ── */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || navMode) return;
+    map.easeTo({ pitch: 0, bearing: 0, duration: 500 });
+  }, [navMode, mapLoaded]);
 
   /* ── center on user (locate-me button) ── */
   useEffect(() => {
