@@ -1,0 +1,27 @@
+{
+  "name": "GreenHOOD",
+  "short_name": "GreenHOOD",
+  "description": "דווח על חפצים חינמיים ברחוב",
+  "start_url": "/map",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F2E8",
+  "theme_color": "#1E3A22",
+  "lang": "he",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/api/icon-png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/api/icon-png-512",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
