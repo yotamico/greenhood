@@ -154,7 +154,10 @@ function MapPageInner() {
   const [sheetPct, setSheetPct]   = useState(DEFAULT);
   const [dragging, setDragging]   = useState(false);
   const [userPos, setUserPos]     = useState<[number,number] | null>(null);
-  const dragRef = useRef({ startY: 0, startPct: DEFAULT });
+  const dragRef     = useRef({ startY: 0, startPct: DEFAULT });
+  const sheetPctRef = useRef(DEFAULT);
+  sheetPctRef.current = sheetPct;
+  const listRef = useRef<HTMLDivElement>(null);
 
   const [centerTrigger, setCenterTrigger] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -163,6 +166,52 @@ function MapPageInner() {
   useEffect(() => {
     if (expandedId !== null) setSheetPct(FULL);
   }, [expandedId]);
+
+  /* non-passive touch drag on list — lets us call preventDefault to block scroll */
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    let startY = 0;
+    let startPct = DEFAULT;
+    let active = false;
+
+    const onStart = (e: TouchEvent) => {
+      startY   = e.touches[0].clientY;
+      startPct = sheetPctRef.current;
+      active   = false;
+    };
+    const onMove = (e: TouchEvent) => {
+      const dy     = e.touches[0].clientY - startY;
+      const atTop  = list.scrollTop < 1;
+      const notFull = startPct > FULL + 2;
+      if (!active) {
+        if (Math.abs(dy) < 8) return;
+        if (!(dy > 0 && atTop) && !(dy < 0 && notFull)) return;
+        active = true;
+        setDragging(true);
+      }
+      e.preventDefault();
+      const pct = startPct + (dy / window.innerHeight) * 100;
+      setSheetPct(Math.max(FULL, Math.min(HIDDEN, pct)));
+    };
+    const onEnd = () => {
+      if (!active) return;
+      active = false;
+      setDragging(false);
+      setSheetPct(curr => snapTo(curr));
+    };
+
+    list.addEventListener("touchstart", onStart, { passive: true });
+    list.addEventListener("touchmove",  onMove,  { passive: false });
+    list.addEventListener("touchend",   onEnd,   { passive: true });
+    list.addEventListener("touchcancel",onEnd,   { passive: true });
+    return () => {
+      list.removeEventListener("touchstart",  onStart);
+      list.removeEventListener("touchmove",   onMove);
+      list.removeEventListener("touchend",    onEnd);
+      list.removeEventListener("touchcancel", onEnd);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── auto-center refs ── */
   const hasInitialCentered  = useRef(false);
@@ -901,11 +950,20 @@ function MapPageInner() {
           }} />
         </div>
 
-        {/* sheet header */}
-        <div style={{
-          padding: "4px 20px 12px",
-          flexShrink: 0,
-        }}>
+        {/* sheet header — also draggable */}
+        <div
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
+          style={{
+            padding: "4px 20px 12px",
+            flexShrink: 0,
+            cursor: dragging ? "grabbing" : "grab",
+            touchAction: "none",
+            userSelect: "none",
+          }}
+        >
           <div style={{
             display: "flex", justifyContent: "space-between", alignItems: "baseline",
           }}>
@@ -928,7 +986,7 @@ function MapPageInner() {
         </div>
 
         {/* items list */}
-        <div style={{
+        <div ref={listRef} style={{
           flex: 1,
           overflowY: "auto",
           padding: "0 16px 100px",
