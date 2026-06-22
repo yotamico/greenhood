@@ -1059,7 +1059,7 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
     if (!isExpanded) { setImgIdx(0); setDrag(0); dragStartRef.current = null; return; }
     const t = setTimeout(() => {
       cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
+    }, 340);
     return () => clearTimeout(t);
   }, [isExpanded]);
 
@@ -1095,7 +1095,7 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
 
   if (isExpanded) {
     return (
-      <div ref={cardRef} className="gh-item-card" style={{
+      <div ref={cardRef} style={{
         background: "var(--surface)", borderRadius: 18,
         border: "2.5px solid var(--ink)", boxShadow: "5px 5px 0 var(--shadow-ink)",
         overflow: "hidden", flexShrink: 0,
