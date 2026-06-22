@@ -159,6 +159,11 @@ function MapPageInner() {
   const [centerTrigger, setCenterTrigger] = useState(0);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  /* snap sheet to full when a card expands */
+  useEffect(() => {
+    if (expandedId !== null) setSheetPct(FULL);
+  }, [expandedId]);
+
   /* ── auto-center refs ── */
   const hasInitialCentered  = useRef(false);
   const lastInteractTimeRef = useRef(0);
@@ -1000,6 +1005,7 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
 
   const isExpanded = expandedId === item.id;
   const dim        = expandedId !== null && expandedId !== item.id;
+  const cardRef    = useRef<HTMLDivElement | null>(null);
 
   const emoji   = CAT_EMOJI[item.category] ?? "📦";
   const bgColor = CAT_COLOR[item.category] ?? "var(--paper-2)";
@@ -1014,7 +1020,11 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
   const urgentText  = item.pickup_day === todayStr ? "🔥 פינוי היום" : "🔥 פינוי מחר";
 
   useEffect(() => {
-    if (!isExpanded) { setImgIdx(0); setDrag(0); dragStartRef.current = null; }
+    if (!isExpanded) { setImgIdx(0); setDrag(0); dragStartRef.current = null; return; }
+    const t = setTimeout(() => {
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+    return () => clearTimeout(t);
   }, [isExpanded]);
 
   const step      = (d: number) => setImgIdx(i => (i + d + Math.max(n, 1)) % Math.max(n, 1));
@@ -1034,7 +1044,7 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
 
   if (isExpanded) {
     return (
-      <div style={{
+      <div ref={cardRef} style={{
         background: "var(--surface)", borderRadius: 18,
         border: "2.5px solid var(--ink)", boxShadow: "5px 5px 0 var(--shadow-ink)",
         overflow: "hidden", flexShrink: 0,
