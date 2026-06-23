@@ -108,7 +108,11 @@ export default function ReportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64: base64, mediaType }),
       });
-      if (!r.ok) return;
+      if (!r.ok) {
+        const errBody = await r.json().catch(() => ({})) as { error?: string };
+        console.error("[AI-CLIENT-ERR]", r.status, errBody.error);
+        return;
+      }
       const data = await r.json() as { title: string; category: string; confidence: number };
       if (data.confidence >= 0.4) {
         setAiSuggestion({ title: data.title, category: data.category });
