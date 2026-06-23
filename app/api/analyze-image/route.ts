@@ -9,6 +9,7 @@ export async function POST(req: NextRequest) {
   try {
     const { imageBase64, mediaType } = await req.json();
     if (!imageBase64) return NextResponse.json({ error: "missing image" }, { status: 400 });
+    console.log("[AI-DBG] b64len:", imageBase64.length, "type:", mediaType);
 
     const msg = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: unknown) {
     const err = e as { status?: number; message?: string; error?: unknown };
-    console.error("[analyze-image] status:", err.status, "message:", err.message, "body:", JSON.stringify(err.error));
+    console.error("[AI-ERR]", JSON.stringify({ s: err.status, b: err.error }));
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
