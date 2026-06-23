@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const msg = await client.messages.create({
-      model: "claude-haiku-4-5",
+      model: "claude-3-5-haiku-20241022",
       max_tokens: 256,
       messages: [{
         role: "user",
