@@ -75,22 +75,38 @@ export default function ReportPage() {
     });
   }, [router]);
 
+  /* resize image to max 800px before sending — avoids Vercel 4.5MB body limit (413) */
+  async function resizeToBase64(file: File, maxPx = 800): Promise<{ base64: string; mediaType: string }> {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        res({ base64: dataUrl.split(",")[1], mediaType: "image/jpeg" });
+      };
+      img.onerror = rej;
+      img.src = url;
+    });
+  }
+
   /* analyze primary photo with Claude Vision */
   async function analyzePhoto(file: File) {
     setAiLoading(true);
     setAiSuggestion(null);
     setAiDismissed(false);
     try {
-      const base64 = await new Promise<string>((res, rej) => {
-        const reader = new FileReader();
-        reader.onload = () => res((reader.result as string).split(",")[1]);
-        reader.onerror = rej;
-        reader.readAsDataURL(file);
-      });
+      const { base64, mediaType } = await resizeToBase64(file);
       const r = await fetch("/api/analyze-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64, mediaType: file.type || "image/jpeg" }),
+        body: JSON.stringify({ imageBase64: base64, mediaType }),
       });
       if (!r.ok) return;
       const data = await r.json() as { title: string; category: string; confidence: number };
