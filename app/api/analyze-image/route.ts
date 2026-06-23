@@ -47,8 +47,9 @@ export async function POST(req: NextRequest) {
       category:   parsed.category,
       confidence: parsed.confidence ?? 0.5,
     });
-  } catch (e) {
-    console.error("[analyze-image]", e);
+  } catch (e: unknown) {
+    const err = e as { status?: number; message?: string; error?: unknown };
+    console.error("[analyze-image] status:", err.status, "message:", err.message, "body:", JSON.stringify(err.error));
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
 }
