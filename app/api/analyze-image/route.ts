@@ -37,10 +37,7 @@ export async function POST(req: NextRequest) {
 
     const raw = (msg.content[0] as { type: string; text: string }).text.trim();
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("[AI-ERR] parse-error raw:", raw.slice(0, 200));
-      return NextResponse.json({ error: "parse error" }, { status: 500 });
-    }
+    if (!jsonMatch) return NextResponse.json({ error: "parse error" }, { status: 500 });
 
     const parsed = JSON.parse(jsonMatch[0]) as { title: string; category: string; confidence: number };
     if (!VALID_CATEGORIES.includes(parsed.category)) parsed.category = "furniture";
@@ -51,9 +48,8 @@ export async function POST(req: NextRequest) {
       confidence: parsed.confidence ?? 0.5,
     });
   } catch (e: unknown) {
-    const err = e as { status?: number; message?: string; error?: { type?: string; message?: string } };
-    const detail = `status=${err.status} msg="${err.message}" type="${err.error?.type}" errMsg="${err.error?.message}"`;
-    console.error("[AI-ERR]", detail);
-    return NextResponse.json({ error: detail }, { status: 500 });
+    const err = e as { status?: number; message?: string };
+    console.error("[analyze-image]", err.status, err.message?.slice(0, 120));
+    return NextResponse.json({ error: "analysis failed" }, { status: 500 });
   }
 }
