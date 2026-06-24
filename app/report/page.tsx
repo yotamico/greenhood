@@ -46,6 +46,7 @@ export default function ReportPage() {
   const [lat,       setLat]       = useState<number|null>(null);
   const [lng,       setLng]       = useState<number|null>(null);
   const [pickupDay, setPickupDay] = useState<"tomorrow"|"flexible">("tomorrow");
+  const [editingAddress, setEditingAddress] = useState(false);
 
   const cameraRef = useRef<HTMLInputElement>(null);
   const multiRef  = useRef<HTMLInputElement>(null);
@@ -523,25 +524,30 @@ export default function ReportPage() {
             <circle cx="12" cy="10" r="3"/>
           </svg>
           <div style={{ flex: 1, minWidth: 0 }}>
-            {lat && lng ? (
+            {lat && lng && !editingAddress ? (
               <>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{address || "מיקום זוהה"}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>זוהה אוטומטית</div>
               </>
             ) : (
               <input
+                autoFocus={editingAddress}
                 className="gh-input"
                 style={{ boxShadow: "none", border: "none", padding: 0, height: 32 }}
                 value={address}
                 onChange={e => setAddress(e.target.value)}
+                onBlur={() => setEditingAddress(false)}
                 placeholder="הכנס/י כתובת ידנית…"
               />
             )}
           </div>
-          <button style={{
-            border: 0, background: "transparent", color: "var(--primary-dark)",
-            fontWeight: 700, fontSize: 13, fontFamily: "inherit", cursor: "pointer", padding: 0,
-          }}>שנה</button>
+          <button
+            onClick={() => setEditingAddress(true)}
+            style={{
+              border: 0, background: "transparent", color: "var(--primary-dark)",
+              fontWeight: 700, fontSize: 13, fontFamily: "inherit", cursor: "pointer", padding: 0,
+            }}
+          >שנה</button>
         </div>
 
         {/* ── Pickup timing ── */}
