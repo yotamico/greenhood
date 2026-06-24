@@ -47,6 +47,8 @@ export default function ReportPage() {
   const [lng,       setLng]       = useState<number|null>(null);
   const [pickupDay, setPickupDay] = useState<"tomorrow"|"flexible">("tomorrow");
   const [editingAddress, setEditingAddress] = useState(false);
+  const [geocoding,     setGeocoding]     = useState(false);
+  const [geocodeError,  setGeocodeError]  = useState(false);
 
   const cameraRef = useRef<HTMLInputElement>(null);
   const multiRef  = useRef<HTMLInputElement>(null);
@@ -148,6 +150,32 @@ export default function ReportPage() {
 
   function toggleTag(t: string) {
     setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  }
+
+  async function geocodeAddress() {
+    const query = address.trim();
+    if (!query) return;
+    setGeocoding(true);
+    setGeocodeError(false);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=he`,
+        { headers: { "User-Agent": "eco-navigation/1.0 (https://eco-navigation.vercel.app)" } }
+      );
+      const data = await res.json();
+      if (data?.[0]) {
+        setLat(parseFloat(data[0].lat));
+        setLng(parseFloat(data[0].lon));
+        setAddress(data[0].display_name.split(",").slice(0, 2).join(", "));
+      } else {
+        setGeocodeError(true);
+      }
+    } catch {
+      setGeocodeError(true);
+    } finally {
+      setGeocoding(false);
+      setEditingAddress(false);
+    }
   }
 
   /* pickup_day: convert to absolute date string */
@@ -527,7 +555,9 @@ export default function ReportPage() {
             {lat && lng && !editingAddress ? (
               <>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{address || "מיקום זוהה"}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>זוהה אוטומטית</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>
+                  {geocoding ? "מאתר כתובת…" : "זוהה אוטומטית"}
+                </div>
               </>
             ) : (
               <input
@@ -535,19 +565,29 @@ export default function ReportPage() {
                 className="gh-input"
                 style={{ boxShadow: "none", border: "none", padding: 0, height: 32 }}
                 value={address}
-                onChange={e => setAddress(e.target.value)}
-                onBlur={() => setEditingAddress(false)}
-                placeholder="הכנס/י כתובת ידנית…"
+                onChange={e => { setAddress(e.target.value); setGeocodeError(false); }}
+                onBlur={geocodeAddress}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); geocodeAddress(); } }}
+                placeholder="הכנס/י כתובת…"
               />
+            )}
+            {geocodeError && (
+              <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, marginTop: 2 }}>
+                כתובת לא נמצאה — נסה/י שוב
+              </div>
             )}
           </div>
           <button
-            onClick={() => setEditingAddress(true)}
+            onClick={() => { setEditingAddress(true); setGeocodeError(false); }}
             style={{
               border: 0, background: "transparent", color: "var(--primary-dark)",
-              fontWeight: 700, fontSize: 13, fontFamily: "inherit", cursor: "pointer", padding: 0,
+              fontWeight: 700, fontSize: 13, fontFamily: "inherit",
+              cursor: geocoding ? "default" : "pointer", padding: 0, flexShrink: 0,
             }}
-          >שנה</button>
+            disabled={geocoding}
+          >
+            {geocoding ? "…" : "שנה"}
+          </button>
         </div>
 
         {/* ── Pickup timing ── */}
