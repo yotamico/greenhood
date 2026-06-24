@@ -67,15 +67,6 @@ export default function ReportPage() {
     });
   }, [router]);
 
-  /* auto-open camera on first load if no photos yet */
-  useEffect(() => {
-    if (authed && photos.length === 0) {
-      const t = setTimeout(() => cameraRef.current?.click(), 150);
-      return () => clearTimeout(t);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed]);
-
   /* resize + AI analysis */
   async function resizeToBase64(file: File, maxPx = 800): Promise<{ base64: string; mediaType: string }> {
     return new Promise((res, rej) => {
