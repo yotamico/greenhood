@@ -6,39 +6,38 @@ import { supabase } from "@/lib/supabase";
 
 /* ── Categories ── */
 const CATS = [
-  { id:"furniture", label:"ריהוט",      emoji:"🪑" },
-  { id:"books",     label:"ספרים",      emoji:"📚" },
-  { id:"lighting",  label:"תאורה",      emoji:"💡" },
-  { id:"electronics",label:"אלקטרוניקה",emoji:"📺" },
-  { id:"kitchen",   label:"מטבח",       emoji:"🍳" },
-  { id:"sports",    label:"ספורט",      emoji:"⚽" },
-  { id:"plants",    label:"צמחים",      emoji:"🌿" },
-  { id:"kids",      label:"ילדים",      emoji:"🧸" },
+  { id:"furniture",   label:"ריהוט",       emoji:"🪑" },
+  { id:"books",       label:"ספרים",       emoji:"📚" },
+  { id:"lighting",    label:"תאורה",       emoji:"💡" },
+  { id:"electronics", label:"אלקטרוניקה",  emoji:"📺" },
+  { id:"kitchen",     label:"מטבח",        emoji:"🍳" },
+  { id:"sports",      label:"ספורט",       emoji:"🚲" },
+  { id:"plants",      label:"צמחים",       emoji:"🌿" },
+  { id:"kids",        label:"ילדים",       emoji:"🧸" },
 ];
 
-const CONDITIONS = ["שלם","כמעט שלם","פגום אך שמיש","לחלקים","לשיפוץ"];
-const TAGS       = ["וינטג׳","עץ","צריך 2 אנשים","פרק ורכב","כבד מאוד","פשוט להרים"];
-
-type Step = 1 | 2 | 3;
+const CONDITIONS = ["שלם","כמעט שלם","פגום אך שמיש","לחלקים","חדש באריזה","משומש מעט"];
+const TAGS       = ["וינטג׳","כבד","צריך 2 אנשים","פגום קלות","מתאים לחוץ","פריט נדיר","כשמש"];
 
 export default function ReportPage() {
   const router = useRouter();
-  const [step,      setStep]    = useState<Step>(1);
   const [loading,   setLoading] = useState(false);
   const [authed,    setAuthed]  = useState(false);
   const [userId,    setUserId]  = useState<string|null>(null);
 
-  /* photo state — array, index 0 is primary */
+  /* photo state */
   const [photos,    setPhotos]    = useState<File[]>([]);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [captured,  setCaptured]  = useState(false); // true once ≥1 photo exists
 
-  /* AI suggestion state */
-  const [aiLoading,   setAiLoading]   = useState(false);
-  const [aiSuggestion, setAiSuggestion] = useState<{title:string; category:string} | null>(null);
-  const [aiDismissed, setAiDismissed] = useState(false);
-  const aiSuggestionIdRef = useRef<string | null>(null); // DB row id for feedback
+  /* AI state */
+  const [aiLoading,    setAiLoading]    = useState(false);
+  const [aiDetected,   setAiDetected]   = useState<string | null>(null); // e.g. "כורסת קטיפה"
+  const [aiConfidence, setAiConfidence] = useState<number>(0);
+  const [aiFilled,     setAiFilled]     = useState(false); // pill shown after fill
+  const aiSuggestionIdRef = useRef<string | null>(null);
 
-  /* other form state */
+  /* form state */
   const [title,     setTitle]     = useState("");
   const [category,  setCategory]  = useState("furniture");
   const [condition, setCondition] = useState("שלם");
@@ -46,19 +45,12 @@ export default function ReportPage() {
   const [address,   setAddress]   = useState("");
   const [lat,       setLat]       = useState<number|null>(null);
   const [lng,       setLng]       = useState<number|null>(null);
+  const [pickupDay, setPickupDay] = useState<"tomorrow"|"flexible">("tomorrow");
 
-  const cameraRef = useRef<HTMLInputElement>(null); // single capture, auto-opened
-  const multiRef  = useRef<HTMLInputElement>(null); // multi-file gallery picker
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const multiRef  = useRef<HTMLInputElement>(null);
 
-  /* auto-open camera when entering step 1 with no photos */
-  useEffect(() => {
-    if (authed && step === 1 && photos.length === 0) {
-      const t = setTimeout(() => cameraRef.current?.click(), 150);
-      return () => clearTimeout(t);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, step, photos.length]);
-
+  /* auth + geolocation */
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.replace("/login"); return; }
@@ -75,7 +67,16 @@ export default function ReportPage() {
     });
   }, [router]);
 
-  /* resize image to max 800px before sending — avoids Vercel 4.5MB body limit (413) */
+  /* auto-open camera on first load if no photos yet */
+  useEffect(() => {
+    if (authed && photos.length === 0) {
+      const t = setTimeout(() => cameraRef.current?.click(), 150);
+      return () => clearTimeout(t);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed]);
+
+  /* resize + AI analysis */
   async function resizeToBase64(file: File, maxPx = 800): Promise<{ base64: string; mediaType: string }> {
     return new Promise((res, rej) => {
       const img = new Image();
@@ -96,11 +97,10 @@ export default function ReportPage() {
     });
   }
 
-  /* analyze primary photo with Claude Vision */
   async function analyzePhoto(file: File) {
     setAiLoading(true);
-    setAiSuggestion(null);
-    setAiDismissed(false);
+    setAiDetected(null);
+    setAiFilled(false);
     try {
       const { base64, mediaType } = await resizeToBase64(file);
       const r = await fetch("/api/analyze-image", {
@@ -108,17 +108,16 @@ export default function ReportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageBase64: base64, mediaType }),
       });
-      if (!r.ok) {
-        const errBody = await r.json().catch(() => ({})) as { error?: string };
-        console.error("[AI-CLIENT-ERR]", r.status, errBody.error);
-        return;
-      }
+      if (!r.ok) return;
       const data = await r.json() as { title: string; category: string; confidence: number };
       if (data.confidence >= 0.4) {
-        setAiSuggestion({ title: data.title, category: data.category });
-        /* save suggestion to DB for future learning */
+        setAiDetected(data.title);
+        setAiConfidence(data.confidence);
+        setTitle(data.title);
+        setCategory(data.category);
+        setAiFilled(true);
         const { data: row } = await supabase.from("ai_suggestions").insert([{
-          suggested_title: data.title,
+          suggested_title:    data.title,
           suggested_category: data.category,
         }]).select("id").single();
         if (row) aiSuggestionIdRef.current = row.id;
@@ -127,57 +126,62 @@ export default function ReportPage() {
     finally { setAiLoading(false); }
   }
 
-  /* add a single photo (camera) — becomes primary if list is empty */
   function handleSinglePhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
     const url = URL.createObjectURL(f);
     setPhotos(prev => prev.length === 0 ? [f] : [f, ...prev.slice(1)]);
     setPhotoUrls(prev => prev.length === 0 ? [url] : [url, ...prev.slice(1)]);
+    setCaptured(true);
     e.target.value = "";
-    analyzePhoto(f); // fire AI analysis immediately
+    analyzePhoto(f);
   }
 
-  /* add multiple photos from gallery (appended after existing) */
   function handleMultiPhotos(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
     const urls = files.map(f => URL.createObjectURL(f));
-    setPhotos(prev => [...prev, ...files]);
-    setPhotoUrls(prev => [...prev, ...urls]);
+    setPhotos(prev => [...prev, ...files].slice(0, 4));
+    setPhotoUrls(prev => [...prev, ...urls].slice(0, 4));
+    if (files.length > 0) setCaptured(true);
     e.target.value = "";
   }
 
-  function handleRemovePhoto(idx: number) {
-    setPhotoUrls(prev => {
-      URL.revokeObjectURL(prev[idx]);
-      return prev.filter((_, i) => i !== idx);
-    });
-    setPhotos(prev => prev.filter((_, i) => i !== idx));
+  function retakePhoto() {
+    setCaptured(false);
+    setAiDetected(null);
+    setAiFilled(false);
+    cameraRef.current?.click();
   }
 
   function toggleTag(t: string) {
     setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   }
 
-  /* submit — upload all photos then insert item */
+  /* pickup_day: convert to absolute date string */
+  function resolvePickupDate(): string | null {
+    if (pickupDay === "flexible") return null;
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split("T")[0];
+  }
+
   async function handleSubmit() {
     if (!userId || !title || !address) return;
     setLoading(true);
 
-    /* insert item first to get its id */
     const { data: item, error } = await supabase.from("items").insert([{
       reporter_id: userId,
       title, category, condition, tags, address,
       location: lat && lng ? `POINT(${lng} ${lat})` : null,
       lat: lat ?? null,
       lng: lng ?? null,
+      pickup_day: resolvePickupDate(),
       status: "active",
     }]).select().single();
 
     if (error || !item) { setLoading(false); alert("שגיאה בשמירה"); return; }
 
-    /* upload all photos in order */
     for (let i = 0; i < photos.length; i++) {
       const f    = photos[i];
       const ext  = f.name.split(".").pop() ?? "jpg";
@@ -196,23 +200,19 @@ export default function ReportPage() {
       }
     }
 
-    /* record whether user accepted AI suggestion (for learning) */
     if (aiSuggestionIdRef.current) {
-      const accepted = aiSuggestion !== null && !aiDismissed;
       await supabase.from("ai_suggestions").update({
-        user_accepted:  accepted,
+        user_accepted:  aiFilled,
         final_title:    title,
         final_category: category,
         item_id:        item.id,
       }).eq("id", aiSuggestionIdRef.current);
     }
 
-    /* grant XP */
     try {
       await supabase.rpc("increment_xp" as never, { user_id: userId, amount: 50 } as never);
     } catch { /* best-effort */ }
 
-    /* broadcast push to nearby users */
     fetch("/api/broadcast-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -231,564 +231,462 @@ export default function ReportPage() {
 
   if (!authed) return null;
 
-  const hasPhotos   = photos.length > 0;
-  const step1Locked = step === 1 && !hasPhotos;
-  const step2Locked = step === 2 && (!title || !address);
-
-  const ctaLabel =
-    step === 1 ? "המשך לפרטים ←" :
-    step === 2 ? "סקירה ופרסום ←" :
-    loading    ? "שומר…"          : "פרסם עכשיו ✓";
+  const primaryUrl  = photoUrls[0] ?? null;
+  const extraPhotos = photoUrls.slice(1);
+  const canPublish  = !!title && !!address && !loading;
 
   return (
     <div style={{
-      minHeight:"100dvh", background:"var(--paper)",
-      fontFamily:"var(--font-sans)",
-      display:"flex", flexDirection:"column",
-      maxWidth:480, margin:"0 auto",
+      minHeight: "100dvh",
+      background: "var(--paper)",
+      fontFamily: "var(--font-sans)",
+      display: "flex", flexDirection: "column",
+      maxWidth: 480, margin: "0 auto",
     }}>
 
       {/* ── HEADER ── */}
       <div style={{
-        padding:"14px 16px 16px",
-        borderBottom:"2px solid var(--ink)",
-        background:"var(--paper)",
-        flexShrink:0,
+        padding: "12px 16px 14px",
+        borderBottom: "2px solid var(--ink)",
+        background: "var(--paper)",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        flexShrink: 0,
       }}>
-        <div style={{
-          display:"flex", justifyContent:"space-between",
-          alignItems:"center", marginBottom:14,
-        }}>
-          <button onClick={() => step > 1 ? setStep((step-1) as Step) : router.back()} style={{
-            background:"none", border:"none", cursor:"pointer",
-            color:"var(--ink)", fontWeight:700, fontSize:14,
-            fontFamily:"var(--font-sans)", padding:0,
-            display:"flex", alignItems:"center", gap:4,
-          }}>→ חזור</button>
-          <span style={{ fontSize:12, fontWeight:600, color:"var(--muted)" }}>שלב {step} / 3</span>
-          <button onClick={() => router.back()} style={{
-            background:"none", border:"none", cursor:"pointer",
-            color:"var(--muted)", fontSize:14, fontFamily:"var(--font-sans)", padding:0,
-          }}>שמור טיוטה</button>
+        <button
+          onClick={() => router.back()}
+          style={{
+            background: "transparent", border: 0, color: "var(--ink)",
+            cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+            fontFamily: "var(--font-sans)", fontWeight: 600, fontSize: 14, padding: 0,
+          }}
+        >
+          <svg width={18} height={18} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+          חזור
+        </button>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 18 }}>
+          דיווח חפץ
         </div>
-
-        <div style={{ display:"flex", gap:6 }}>
-          {[1,2,3].map(s => (
-            <div key={s} style={{
-              flex:1, height:6,
-              background: s <= step ? "var(--primary)" : "var(--paper-2)",
-              border:"1.5px solid var(--ink)", borderRadius:999,
-              transition:"background 200ms",
-            }}/>
-          ))}
-        </div>
-        <div style={{
-          display:"flex", justifyContent:"space-between",
-          marginTop:6, fontSize:10, fontWeight:600,
-        }}>
-          {["📸 תמונה","📋 פרטים","✅ סקירה"].map((l,i) => (
-            <span key={i} style={{ color: i+1===step ? "var(--ink)" : "var(--muted)", fontWeight: i+1===step ? 800 : 500 }}>{l}</span>
-          ))}
-        </div>
+        <div style={{ width: 60 }}/>
       </div>
 
-      {/* ── CONTENT ── */}
-      <div style={{ flex:1, overflowY:"auto", padding:"20px 20px" }}>
-        {step === 1 && (
-          <>
-            <StepCamera
-              photoUrls={photoUrls}
-              cameraRef={cameraRef}
-              multiRef={multiRef}
-              onSingleFile={handleSinglePhoto}
-              onMultiFiles={handleMultiPhotos}
-              onRemove={handleRemovePhoto}
-            />
-            {aiLoading && (
-              <div style={{
-                marginTop:12, padding:"10px 14px",
-                background:"#EEF7EE", border:"1.5px solid #6B9956",
-                borderRadius:12, display:"flex", alignItems:"center", gap:8,
-                fontSize:13, fontWeight:600, color:"#4A7A3A",
-              }}>
-                <span style={{ fontSize:18 }}>🤖</span>
-                מנתח את התמונה…
-              </div>
-            )}
-            {aiSuggestion && !aiLoading && !aiDismissed && (
-              <div style={{
-                marginTop:12, padding:"10px 14px",
-                background:"#EEF7EE", border:"1.5px solid #6B9956",
-                borderRadius:12, display:"flex", alignItems:"center", gap:8,
-                fontSize:13, fontWeight:600, color:"#4A7A3A",
-              }}>
-                <span style={{ fontSize:18 }}>✅</span>
-                זיהינו: <strong>{aiSuggestion.title}</strong>
-              </div>
-            )}
-          </>
-        )}
-        {step === 2 && (
-          <>
-            {/* AI suggestion banner */}
-            {aiSuggestion && !aiDismissed && (
-              <div style={{
-                marginBottom:16, padding:"12px 14px",
-                background:"#EEF7EE", border:"2px solid #6B9956",
-                borderRadius:14, boxShadow:"var(--sh-sm)",
-                display:"flex", alignItems:"center", gap:10,
-              }}>
-                <span style={{ fontSize:22, flexShrink:0 }}>🤖</span>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:"#4A7A3A", marginBottom:4 }}>
-                    זיהינו אוטומטית:
-                  </div>
-                  <div style={{ fontSize:14, fontWeight:800, color:"var(--ink)" }}>
-                    {aiSuggestion.title}
-                  </div>
-                  <div style={{ fontSize:11, color:"var(--muted)", fontWeight:500 }}>
-                    קטגוריה: {CATS.find(c => c.id === aiSuggestion.category)?.label ?? aiSuggestion.category}
-                  </div>
-                </div>
-                <div style={{ display:"flex", flexDirection:"column", gap:6, flexShrink:0 }}>
-                  <button
-                    onClick={() => { setTitle(aiSuggestion.title); setCategory(aiSuggestion.category); setAiDismissed(true); }}
-                    style={{
-                      padding:"5px 12px", borderRadius:999,
-                      background:"var(--primary)", border:"1.5px solid var(--ink)",
-                      fontFamily:"var(--font-sans)", fontWeight:700, fontSize:12,
-                      cursor:"pointer",
-                    }}
-                  >אשר ✓</button>
-                  <button
-                    onClick={() => setAiDismissed(true)}
-                    style={{
-                      padding:"5px 12px", borderRadius:999,
-                      background:"none", border:"1.5px solid var(--ink)",
-                      fontFamily:"var(--font-sans)", fontWeight:700, fontSize:12,
-                      cursor:"pointer", color:"var(--muted)",
-                    }}
-                  >שנה</button>
-                </div>
-              </div>
-            )}
-            {aiLoading && (
-              <div style={{
-                marginBottom:16, padding:"10px 14px",
-                background:"var(--paper-2)", border:"1.5px solid var(--ink)",
-                borderRadius:12, display:"flex", alignItems:"center", gap:8,
-                fontSize:13, fontWeight:600, color:"var(--muted)",
-              }}>
-                <span style={{ fontSize:18 }}>🔍</span> מנתח תמונה…
-              </div>
-            )}
-            <StepDetails
-              title={title} setTitle={setTitle}
-              category={category} setCategory={setCategory}
-              condition={condition} setCondition={setCondition}
-              tags={tags} toggleTag={toggleTag}
-              address={address} setAddress={setAddress}
-              lat={lat} lng={lng}
-            />
-          </>
-        )}
-        {step === 3 && (
-          <StepReview
-            primaryPhotoUrl={photoUrls[0] ?? null}
-            photoCount={photos.length}
-            title={title}
-            category={CATS.find(c => c.id === category)!}
-            condition={condition} tags={tags} address={address}
-          />
-        )}
-      </div>
-
-      {/* ── CTA ── */}
+      {/* ── SINGLE SCROLLING BODY ── */}
       <div style={{
-        padding:"14px 16px 32px",
-        background:"var(--surface)",
-        borderTop:"2px solid var(--ink)",
-        flexShrink:0,
+        flex: 1, overflowY: "auto", padding: "18px 20px",
+        scrollbarWidth: "none",
       }}>
-        <div style={{ display:"flex", gap:10, alignItems:"stretch" }}>
-          {/* Secondary "add photos" button — only on step 1 */}
-          {step === 1 && (
+
+        {/* ── Photo area ── */}
+        <div style={{
+          position: "relative",
+          aspectRatio: "4 / 3",
+          background: captured && primaryUrl ? "var(--paper-2)" : "var(--ink)",
+          borderRadius: 16,
+          border: "2px solid var(--ink)",
+          boxShadow: "4px 4px 0 var(--shadow-ink)",
+          overflow: "hidden",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          marginBottom: 12,
+          cursor: captured ? "default" : "pointer",
+        }}
+          onClick={() => { if (!captured) cameraRef.current?.click(); }}
+        >
+          {captured && primaryUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={primaryUrl} alt="תמונה ראשית"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <div style={{ color: "var(--paper)", textAlign: "center", padding: 40 }}>
+              <svg width={52} height={52} viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <div style={{ marginTop: 12, fontSize: 14, fontWeight: 600 }}>תצוגת מצלמה</div>
+            </div>
+          )}
+
+          {/* AI viewfinder corners — shown when captured */}
+          {captured && (
+            <>
+              {[
+                { top: 12, right: 12, borderTop: "4px solid var(--primary)", borderRight: "4px solid var(--primary)", borderRadius: "0 12px 0 0" },
+                { top: 12, left:  12, borderTop: "4px solid var(--primary)", borderLeft:  "4px solid var(--primary)", borderRadius: "12px 0 0 0" },
+                { bottom: 12, right: 12, borderBottom: "4px solid var(--primary)", borderRight: "4px solid var(--primary)", borderRadius: "0 0 12px 0" },
+                { bottom: 12, left:  12, borderBottom: "4px solid var(--primary)", borderLeft:  "4px solid var(--primary)", borderRadius: "0 0 0 12px" },
+              ].map((s, i) => (
+                <div key={i} style={{ position: "absolute", width: 26, height: 26, ...s }}/>
+              ))}
+
+              {/* AI badge */}
+              <div style={{
+                position: "absolute", bottom: 12, left: 12, right: 12,
+                padding: "9px 12px",
+                background: "var(--surface)", borderRadius: 12,
+                border: "2px solid var(--ink)",
+                boxShadow: "2.5px 2.5px 0 var(--shadow-ink)",
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <div style={{
+                  width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                  background: aiLoading ? "var(--muted)" : "var(--primary)",
+                  color: "white", border: "1.5px solid var(--ink)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontWeight: 800, fontSize: 12,
+                }}>
+                  {aiLoading ? "…" : "AI"}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--ink)" }}>
+                    {aiLoading
+                      ? "מנתח תמונה…"
+                      : aiDetected
+                        ? `זוהה: ${aiDetected}`
+                        : "מוכן לצילום"
+                    }
+                  </div>
+                  {!aiLoading && aiDetected && (
+                    <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>
+                      מילאתי שם, קטגוריה ומצב למטה
+                    </div>
+                  )}
+                </div>
+                {!aiLoading && aiDetected && (
+                  <span style={{
+                    padding: "3px 8px", borderRadius: 999, flexShrink: 0,
+                    background: "var(--primary-tint)", color: "var(--primary-dark)",
+                    border: "1.5px solid var(--primary-dark)",
+                    fontSize: 10, fontWeight: 800,
+                  }}>{Math.round(aiConfidence * 100)}%</span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Photo action row ── */}
+        <div style={{ display: "flex", gap: 8, marginBottom: extraPhotos.length > 0 ? 12 : 22 }}>
+          <button
+            onClick={retakePhoto}
+            style={{
+              flex: 1, padding: 11,
+              background: "var(--surface)", border: "2px solid var(--ink)",
+              borderRadius: 12, boxShadow: "2px 2px 0 var(--shadow-ink)",
+              cursor: "pointer", fontFamily: "var(--font-sans)",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              fontSize: 13, fontWeight: 700,
+            }}
+          >
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            {captured ? "צלם שוב" : "צלם"}
+          </button>
+          {photos.length < 4 && (
             <button
               onClick={() => multiRef.current?.click()}
               style={{
-                flexShrink:0,
-                padding:"0 18px",
-                height:56,
-                background:"var(--surface)",
-                border:"2px solid var(--ink)",
-                borderRadius:"var(--r-md)",
-                fontFamily:"var(--font-sans)", fontWeight:700, fontSize:14,
-                cursor:"pointer",
-                boxShadow:"var(--sh-sm)",
-                display:"flex", alignItems:"center", justifyContent:"center", gap:6,
-                color:"var(--ink)",
+                flex: 1, padding: 11,
+                background: "var(--warning-tint)", border: "2px solid var(--ink)",
+                borderRadius: 12, boxShadow: "2px 2px 0 var(--shadow-ink)",
+                cursor: "pointer", fontFamily: "var(--font-sans)",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                fontSize: 13, fontWeight: 700,
               }}
             >
-              <span style={{ fontSize:18, lineHeight:1 }}>+</span>
-              <span>הוסף</span>
+              <svg width={16} height={16} viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
+                <path d="M12 5v14M5 12h14"/>
+              </svg>
+              תמונה נוספת ({photos.length}/4)
             </button>
           )}
-
-          {/* Main CTA */}
-          <button
-            disabled={loading || step1Locked || step2Locked}
-            onClick={() => step < 3 ? setStep((step+1) as Step) : handleSubmit()}
-            style={{
-              flex:1, height:56,
-              background: (step1Locked || loading) ? "var(--primary-tint)" : "var(--primary)",
-              color:"var(--ink)",
-              border:"2px solid var(--ink)", borderRadius:"var(--r-md)",
-              fontFamily:"var(--font-sans)", fontWeight:700, fontSize:17,
-              cursor: (loading || step1Locked || step2Locked) ? "not-allowed" : "pointer",
-              boxShadow:"var(--sh-md)",
-              opacity: (step1Locked || step2Locked) ? 0.55 : 1,
-              transition:"opacity 200ms, background 200ms",
-            }}
-          >{ctaLabel}</button>
         </div>
 
-        {/* Hint when button is locked on step 1 */}
-        {step1Locked && (
-          <div style={{
-            marginTop:8, textAlign:"center",
-            fontSize:12, color:"var(--muted)", fontWeight:500,
-          }}>יש להוסיף לפחות תמונה אחת כדי להמשיך</div>
+        {/* extra thumbnails */}
+        {extraPhotos.length > 0 && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
+            {extraPhotos.map((url, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={i} src={url} alt=""
+                style={{
+                  width: 48, height: 48, objectFit: "cover",
+                  borderRadius: 10, border: "1.5px solid var(--ink)", flexShrink: 0,
+                }} />
+            ))}
+          </div>
         )}
+
+        {/* ── AI pill ── */}
+        {aiFilled && (
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            padding: "3px 9px", borderRadius: 999,
+            background: "var(--primary-tint)", color: "var(--primary-dark)",
+            border: "1.5px solid var(--primary-dark)",
+            fontSize: 11, fontWeight: 800, marginBottom: 14,
+          }}>
+            ✨ AI מילא בשבילך · תקן אם צריך
+          </div>
+        )}
+
+        {/* ── Title ── */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>
+          שם החפץ
+        </div>
+        <input
+          className="gh-input"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="למשל: ספה תלת מושבית"
+          style={{ marginBottom: 20 }}
+        />
+
+        {/* ── Category ── */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 10 }}>
+          קטגוריה
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+          {CATS.map(c => {
+            const isActive = category === c.id;
+            return (
+              <button key={c.id} onClick={() => setCategory(c.id)} style={{
+                padding: "10px 4px",
+                background: isActive ? "var(--primary)" : "var(--surface)",
+                border: "2px solid var(--ink)", borderRadius: 12,
+                boxShadow: isActive ? "3px 3px 0 var(--shadow-ink)" : "1.5px 1.5px 0 var(--shadow-ink)",
+                cursor: "pointer", display: "flex", flexDirection: "column",
+                alignItems: "center", gap: 4, fontFamily: "var(--font-sans)",
+                transition: "all 120ms",
+              }}>
+                <span style={{ fontSize: 20 }}>{c.emoji}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--ink)" }}>{c.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Condition ── */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 10 }}>
+          מצב
+        </div>
+        <div style={{
+          display: "flex", gap: 6, marginBottom: 20,
+          overflowX: "auto", flexWrap: "nowrap",
+          marginLeft: -20, marginRight: -20, padding: "0 20px",
+          scrollbarWidth: "none",
+        }}>
+          {CONDITIONS.map(c => (
+            <button key={c} onClick={() => setCondition(c)} style={{
+              padding: "7px 14px", height: 34, flexShrink: 0,
+              background: condition === c ? "var(--ink)" : "var(--surface)",
+              color: condition === c ? "var(--paper)" : "var(--ink)",
+              border: "1.5px solid var(--ink)", borderRadius: 999,
+              fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
+              cursor: "pointer", whiteSpace: "nowrap",
+              boxShadow: condition === c ? "2px 2px 0 var(--shadow-ink)" : "1px 1px 0 var(--shadow-ink)",
+            }}>{c}</button>
+          ))}
+        </div>
+
+        {/* ── Tags ── */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 10 }}>
+          תגיות (אופציונלי)
+        </div>
+        <div style={{
+          display: "flex", gap: 6, marginBottom: 22,
+          overflowX: "auto", flexWrap: "nowrap",
+          marginLeft: -20, marginRight: -20, padding: "0 20px",
+          scrollbarWidth: "none",
+        }}>
+          {TAGS.map(t => (
+            <button key={t} onClick={() => toggleTag(t)} style={{
+              padding: "7px 14px", height: 34, flexShrink: 0,
+              background: tags.includes(t) ? "var(--primary-tint)" : "var(--surface)",
+              border: tags.includes(t) ? "2px solid var(--primary-dark)" : "1.5px solid var(--ink)",
+              borderRadius: 999,
+              fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
+              cursor: "pointer", whiteSpace: "nowrap", color: "var(--ink)",
+              boxShadow: "1px 1px 0 var(--shadow-ink)",
+            }}>{t}</button>
+          ))}
+        </div>
+
+        {/* ── Location ── */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>
+          מיקום
+        </div>
+        <div style={{
+          background: "var(--surface)", borderRadius: 14,
+          border: "2px solid var(--ink)", boxShadow: "3px 3px 0 var(--shadow-ink)",
+          padding: 12, marginBottom: 22,
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <svg width={20} height={20} viewBox="0 0 24 24" fill="none"
+            stroke="var(--primary-dark)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+            <circle cx="12" cy="10" r="3"/>
+          </svg>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {lat && lng ? (
+              <>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{address || "מיקום זוהה"}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>זוהה אוטומטית</div>
+              </>
+            ) : (
+              <input
+                className="gh-input"
+                style={{ boxShadow: "none", border: "none", padding: 0, height: 32 }}
+                value={address}
+                onChange={e => setAddress(e.target.value)}
+                placeholder="הכנס/י כתובת ידנית…"
+              />
+            )}
+          </div>
+          <button style={{
+            border: 0, background: "transparent", color: "var(--primary-dark)",
+            fontWeight: 700, fontSize: 13, fontFamily: "inherit", cursor: "pointer", padding: 0,
+          }}>שנה</button>
+        </div>
+
+        {/* ── Pickup timing ── */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 10 }}>
+          מתי לאסוף
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+          <PickupOption
+            id="tomorrow" current={pickupDay} setCurrent={setPickupDay}
+            label="פינוי מחר 07:00" sub="יסומן כדחוף לשכנים" hot
+          />
+          <PickupOption
+            id="flexible" current={pickupDay} setCurrent={setPickupDay}
+            label="גמיש / זמין כעת" sub="ללא מועד פינוי קבוע"
+          />
+        </div>
+
+        {/* ── XP hint ── */}
+        <div style={{
+          padding: 12, background: "var(--primary-tint)", borderRadius: 14,
+          border: "2px solid var(--ink)", boxShadow: "3px 3px 0 var(--shadow-ink)",
+          display: "flex", gap: 12, alignItems: "center",
+          marginBottom: 8,
+        }}>
+          <div style={{
+            width: 38, height: 38, borderRadius: 10,
+            background: "var(--primary)", color: "white", border: "2px solid var(--ink)",
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            fontSize: 20,
+          }}>♻️</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary-dark)" }}>+50 XP</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-soft)" }}>כל דיווח מציל ~8 ק״ג מהטמנה</div>
+          </div>
+        </div>
       </div>
-    </div>
-  );
-}
 
-/* ── Step 1: Camera ── */
-function StepCamera({ photoUrls, cameraRef, multiRef, onSingleFile, onMultiFiles, onRemove }: {
-  photoUrls:     string[];
-  cameraRef:     React.RefObject<HTMLInputElement | null>;
-  multiRef:      React.RefObject<HTMLInputElement | null>;
-  onSingleFile:  (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onMultiFiles:  (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onRemove:      (idx: number) => void;
-}) {
-  const primaryUrl = photoUrls[0] ?? null;
-  const extras     = photoUrls.slice(1);
-
-  return (
-    <div>
-      <h2 style={{
-        fontFamily:"var(--font-display)", fontWeight:900,
-        fontSize:26, margin:"0 0 8px", lineHeight:1.1,
-      }}>צלם/י את הפריט</h2>
-      <p style={{ fontSize:14, color:"var(--muted)", fontWeight:500, margin:"0 0 20px" }}>
-        תמונה ברורה עוזרת למצוא את הפריט מהר יותר.
-      </p>
-
-      {/* ── Primary photo area ── */}
-      <div
-        onClick={() => !primaryUrl && cameraRef.current?.click()}
-        style={{
-          position:"relative",
-          aspectRatio:"4/5",
-          background: primaryUrl ? "transparent" : "var(--paper-2)",
-          borderRadius:16,
-          border:`2px ${primaryUrl ? "solid" : "dashed"} var(--ink)`,
-          boxShadow:"var(--sh-lg)",
-          overflow:"hidden",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          cursor: primaryUrl ? "default" : "pointer",
-          marginBottom: extras.length > 0 ? 0 : 14,
-        }}
-      >
-        {primaryUrl ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={primaryUrl} alt="תצוגה" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
-
-            {/* Remove primary button — top-left */}
-            <button
-              onClick={e => { e.stopPropagation(); onRemove(0); }}
-              style={{
-                position:"absolute", top:10, left:10,
-                width:36, height:36, borderRadius:"50%",
-                background:"var(--surface)", border:"2px solid var(--ink)",
-                display:"flex", alignItems:"center", justifyContent:"center",
-                cursor:"pointer", fontSize:16, padding:0,
-                boxShadow:"var(--sh-sm)",
-              }}
-            >✕</button>
-
-            {/* "ראשית" badge — bottom-right */}
-            <div style={{
-              position:"absolute", bottom:10, right:10,
-              padding:"3px 10px", borderRadius:999,
-              background:"var(--ink)", color:"var(--paper)",
-              fontSize:11, fontWeight:700,
-            }}>ראשית</div>
-          </>
-        ) : (
-          <div style={{ textAlign:"center", padding:40 }}>
-            <div style={{ fontSize:56, marginBottom:12 }}>📷</div>
-            <div style={{ fontWeight:700, fontSize:16, marginBottom:4 }}>לחץ/י לצילום</div>
-            <div style={{ fontSize:12, color:"var(--muted)", fontWeight:500 }}>
-              גלריה · מצלמה
-            </div>
+      {/* ── FOOTER — single publish button ── */}
+      <div style={{
+        padding: "14px 16px 28px",
+        background: "var(--surface)",
+        borderTop: "2px solid var(--ink)",
+        flexShrink: 0,
+      }}>
+        <button
+          disabled={!canPublish}
+          onClick={handleSubmit}
+          style={{
+            width: "100%", height: 56,
+            background: canPublish ? "var(--primary)" : "var(--primary-tint)",
+            color: "var(--ink)",
+            border: "2px solid var(--ink)", borderRadius: "var(--r-md)",
+            fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 17,
+            cursor: canPublish ? "pointer" : "not-allowed",
+            boxShadow: canPublish ? "var(--sh-md)" : "none",
+            opacity: canPublish ? 1 : 0.6,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            transition: "opacity 200ms, background 200ms",
+          }}
+        >
+          <svg width={20} height={20} viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          {loading ? "שומר…" : "פרסם דיווח"}
+        </button>
+        {!title && (
+          <div style={{ marginTop: 8, textAlign: "center", fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>
+            יש למלא שם חפץ לפני הפרסום
           </div>
         )}
       </div>
 
-      {/* ── Extra thumbnails — below main image ── */}
-      {extras.length > 0 && (
-        <div style={{
-          display:"flex", gap:8, overflowX:"auto",
-          paddingTop:12, paddingBottom:4, marginBottom:14,
-          scrollbarWidth:"none",
-        }}>
-          {extras.map((url, i) => (
-            <div key={i} style={{ position:"relative", flexShrink:0 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url} alt=""
-                style={{ width:72, height:72, objectFit:"cover", borderRadius:10, border:"2px solid var(--ink)", display:"block" }}
-              />
-              <button
-                onClick={() => onRemove(i + 1)}
-                style={{
-                  position:"absolute", top:5, left:5,
-                  width:22, height:22, borderRadius:"50%",
-                  background:"rgba(45,42,36,0.85)", color:"white",
-                  border:"2px solid white",
-                  display:"flex", alignItems:"center", justifyContent:"center",
-                  cursor:"pointer", fontSize:11, padding:0, fontWeight:800,
-                }}
-              >✕</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Hidden inputs */}
+      {/* Hidden file inputs */}
       <input
         ref={cameraRef}
         type="file"
         accept="image/*"
         capture="environment"
-        onChange={onSingleFile}
-        style={{ display:"none" }}
+        onChange={handleSinglePhoto}
+        style={{ display: "none" }}
       />
       <input
         ref={multiRef}
         type="file"
         accept="image/*"
         multiple
-        onChange={onMultiFiles}
-        style={{ display:"none" }}
+        onChange={handleMultiPhotos}
+        style={{ display: "none" }}
       />
     </div>
   );
 }
 
-/* ── Step 2: Details ── */
-function StepDetails({ title, setTitle, category, setCategory, condition,
-  setCondition, tags, toggleTag, address, setAddress, lat, lng }: {
-  title:string; setTitle:(v:string)=>void;
-  category:string; setCategory:(v:string)=>void;
-  condition:string; setCondition:(v:string)=>void;
-  tags:string[]; toggleTag:(t:string)=>void;
-  address:string; setAddress:(v:string)=>void;
-  lat:number|null; lng:number|null;
+/* ── Pickup option radio row ── */
+function PickupOption({ id, current, setCurrent, label, sub, hot }: {
+  id:         "tomorrow" | "flexible";
+  current:    "tomorrow" | "flexible";
+  setCurrent: (v: "tomorrow" | "flexible") => void;
+  label:      string;
+  sub:        string;
+  hot?:       boolean;
 }) {
+  const active = id === current;
   return (
-    <div>
-      <h2 style={{
-        fontFamily:"var(--font-display)", fontWeight:900,
-        fontSize:26, margin:"0 0 8px", lineHeight:1.1,
-      }}>פרטי הפריט</h2>
-      <p style={{ fontSize:14, color:"var(--muted)", fontWeight:500, margin:"0 0 20px" }}>
-        מלא/י את הפרטים — כמה שיותר, כך יותר קל למצוא.
-      </p>
-
-      <label style={{ display:"block", marginBottom:20 }}>
-        <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:8 }}>שם הפריט *</div>
-        <input
-          className="gh-input"
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          placeholder="למשל: ספה תלת מושבית"
-          required
-        />
-      </label>
-
-      <div style={{ marginBottom:20 }}>
-        <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:10 }}>קטגוריה</div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8 }}>
-          {CATS.map(c => (
-            <button key={c.id} onClick={() => setCategory(c.id)} style={{
-              padding:"10px 4px",
-              background: category===c.id ? "var(--primary)" : "var(--surface)",
-              border:"2px solid var(--ink)", borderRadius:12,
-              boxShadow: category===c.id ? "var(--sh-md)" : "var(--sh-sm)",
-              cursor:"pointer",
-              display:"flex", flexDirection:"column",
-              alignItems:"center", gap:4,
-              fontFamily:"var(--font-sans)",
-              transition:"all 120ms",
-            }}>
-              <span style={{ fontSize:20 }}>{c.emoji}</span>
-              <span style={{ fontSize:10, fontWeight:700 }}>{c.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ marginBottom:20 }}>
-        <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:10 }}>מצב</div>
-        <div style={{ display:"flex", gap:6, overflowX:"auto", marginInline:-20, paddingInline:20, scrollbarWidth:"none" }}>
-          {CONDITIONS.map(c => (
-            <button key={c} onClick={() => setCondition(c)} style={{
-              padding:"7px 14px", height:34, flexShrink:0,
-              background: condition===c ? "var(--ink)" : "var(--surface)",
-              color: condition===c ? "var(--paper)" : "var(--ink)",
-              border:"1.5px solid var(--ink)", borderRadius:999,
-              fontFamily:"var(--font-sans)", fontWeight:700, fontSize:13,
-              cursor:"pointer", whiteSpace:"nowrap",
-              boxShadow: condition===c ? "2px 2px 0 var(--shadow-ink)" : "1px 1px 0 var(--shadow-ink)",
-            }}>{c}</button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ marginBottom:20 }}>
-        <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:10 }}>תגיות (לא חובה)</div>
-        <div style={{ display:"flex", gap:6, overflowX:"auto", marginInline:-20, paddingInline:20, scrollbarWidth:"none" }}>
-          {TAGS.map(t => (
-            <button key={t} onClick={() => toggleTag(t)} style={{
-              padding:"7px 14px", height:34, flexShrink:0,
-              background: tags.includes(t) ? "var(--primary-tint)" : "var(--surface)",
-              border: tags.includes(t) ? "2px solid var(--primary-dark)" : "1.5px solid var(--ink)",
-              borderRadius:999,
-              fontFamily:"var(--font-sans)", fontWeight:700, fontSize:13,
-              cursor:"pointer", whiteSpace:"nowrap", color:"var(--ink)",
-              boxShadow:"1px 1px 0 var(--shadow-ink)",
-            }}>{t}</button>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ marginBottom:8 }}>
-        <div style={{ fontSize:10, fontWeight:800, letterSpacing:"0.08em", textTransform:"uppercase", color:"var(--muted)", marginBottom:8 }}>כתובת *</div>
-        <div style={{
-          background:"var(--surface)", borderRadius:"var(--r-md)",
-          border:"2px solid var(--ink)", boxShadow:"var(--sh-md)",
-          padding:12,
-          display:"flex", alignItems:"center", gap:10,
-        }}>
-          <span style={{ fontSize:18 }}>📍</span>
-          <div style={{ flex:1 }}>
-            {lat && lng ? (
-              <div style={{ fontSize:13, fontWeight:700, color:"var(--ink)" }}>{address || "מיקום זוהה"}</div>
-            ) : (
-              <input
-                className="gh-input"
-                style={{ boxShadow:"none", border:"none", padding:"0", height:32 }}
-                value={address}
-                onChange={e => setAddress(e.target.value)}
-                placeholder="הכנס/י כתובת ידנית…"
-              />
-            )}
-            <div style={{ fontSize:11, color:"var(--muted)", fontWeight:500, marginTop:2 }}>
-              {lat && lng ? `${lat.toFixed(5)}, ${lng.toFixed(5)}` : "לא זוהה GPS"}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Step 3: Review ── */
-function StepReview({ primaryPhotoUrl, photoCount, title, category, condition, tags, address }: {
-  primaryPhotoUrl: string|null;
-  photoCount:      number;
-  title:           string;
-  category:        { id:string; label:string; emoji:string };
-  condition:       string;
-  tags:            string[];
-  address:         string;
-}) {
-  return (
-    <div>
-      <h2 style={{
-        fontFamily:"var(--font-display)", fontWeight:900,
-        fontSize:26, margin:"0 0 8px", lineHeight:1.1,
-      }}>הכל נראה טוב?</h2>
-      <p style={{ fontSize:14, color:"var(--muted)", fontWeight:500, margin:"0 0 20px" }}>
-        זו התצוגה שיראו שאר המשתמשים.
-      </p>
-
+    <button
+      onClick={() => setCurrent(id)}
+      style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: 14, textAlign: "right",
+        background: active ? (hot ? "var(--accent-tint)" : "var(--primary-tint)") : "var(--surface)",
+        border: "2px solid var(--ink)", borderRadius: 14,
+        boxShadow: active ? "3px 3px 0 var(--shadow-ink)" : "1.5px 1.5px 0 var(--shadow-ink)",
+        cursor: "pointer", width: "100%", fontFamily: "var(--font-sans)",
+        transition: "all 120ms",
+      }}
+    >
       <div style={{
-        background:"var(--surface)",
-        border:"2px solid var(--ink)", borderRadius:16,
-        boxShadow:"var(--sh-lg)",
-        overflow:"hidden", marginBottom:16,
+        width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+        background: active ? "var(--ink)" : "var(--surface)",
+        border: "2px solid var(--ink)",
+        display: "flex", alignItems: "center", justifyContent: "center",
       }}>
-        <div style={{
-          height:180,
-          background: primaryPhotoUrl ? "transparent" : "var(--warning-tint)",
-          borderBottom:"2px solid var(--ink)",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:80, position:"relative", overflow:"hidden",
-        }}>
-          {primaryPhotoUrl
-            // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={primaryPhotoUrl} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
-            : category.emoji
-          }
-          {photoCount > 1 && (
-            <div style={{
-              position:"absolute", bottom:10, right:10,
-              padding:"3px 10px", borderRadius:999,
-              background:"rgba(45,42,36,0.75)", color:"var(--paper)",
-              fontSize:12, fontWeight:700,
-            }}>+{photoCount - 1} תמונות</div>
-          )}
-        </div>
-        <div style={{ padding:14 }}>
-          <div style={{ fontFamily:"var(--font-display)", fontWeight:900, fontSize:18, marginBottom:4 }}>{title}</div>
-          <div style={{ fontSize:12, color:"var(--muted)", fontWeight:500, marginBottom:8 }}>📍 {address}</div>
-          <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
-            {[category.label, condition, ...tags].map(t => (
-              <span key={t} style={{
-                padding:"2px 8px", borderRadius:999,
-                background:"var(--paper-2)", border:"1.5px solid var(--ink)",
-                fontSize:11, fontWeight:700,
-              }}>{t}</span>
-            ))}
-          </div>
-        </div>
+        {active && (
+          <svg width={12} height={12} viewBox="0 0 24 24" fill="none"
+            stroke="var(--paper)" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        )}
       </div>
-
-      <div style={{
-        padding:14,
-        background:"var(--primary-tint)", borderRadius:14,
-        border:"2px solid var(--ink)", boxShadow:"var(--sh-md)",
-        display:"flex", gap:12, alignItems:"center",
-      }}>
-        <div style={{
-          width:40, height:40, borderRadius:10,
-          background:"var(--primary)", border:"2px solid var(--ink)",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:20, flexShrink:0,
-        }}>♻️</div>
-        <div style={{ flex:1 }}>
-          <div style={{ fontSize:13, fontWeight:800, color:"var(--primary-dark)" }}>+50 XP על הפרסום</div>
-          <div style={{ fontSize:12, fontWeight:500, color:"var(--ink-soft)" }}>
-            ותציל בערך 8 ק&quot;ג מהטמנה 🌱
-          </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+          {hot && "🔥"}{label}
         </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500, marginTop: 2 }}>{sub}</div>
       </div>
-    </div>
+    </button>
   );
 }

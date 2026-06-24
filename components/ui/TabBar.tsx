@@ -76,6 +76,8 @@ export function TabBar() {
   const [hasUnread, setHasUnread] = useState(false);
 
   useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return;
       const userId = session.user.id;
@@ -114,15 +116,15 @@ export function TabBar() {
       }
 
       // Re-check when a new message arrives on any of my items
-      const channel = supabase
-        .channel("tabbar-messages")
+      channel = supabase
+        .channel(`tabbar-messages-${userId}`)
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
           fetchHasUnread(userId).then(setHasUnread);
         })
         .subscribe();
-
-      return () => { supabase.removeChannel(channel); };
     });
+
+    return () => { if (channel) supabase.removeChannel(channel); };
   }, [pathname]); // re-check when navigating (e.g. returning from chat marks read)
 
   return (
