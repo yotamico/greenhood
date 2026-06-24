@@ -46,9 +46,12 @@ export default function ReportPage() {
   const [lat,       setLat]       = useState<number|null>(null);
   const [lng,       setLng]       = useState<number|null>(null);
   const [pickupDay, setPickupDay] = useState<"tomorrow"|"flexible">("tomorrow");
-  const [editingAddress, setEditingAddress] = useState(false);
-  const [geocoding,     setGeocoding]     = useState(false);
-  const [geocodeError,  setGeocodeError]  = useState(false);
+  const [editingAddress,  setEditingAddress]  = useState(false);
+  const [geocoding,       setGeocoding]       = useState(false);
+  const [geocodeError,    setGeocodeError]    = useState(false);
+  const [suggestions,     setSuggestions]     = useState<{display_name: string; lat: string; lon: string}[]>([]);
+  const [suggestOpen,     setSuggestOpen]     = useState(false);
+  const suggestDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cameraRef = useRef<HTMLInputElement>(null);
   const multiRef  = useRef<HTMLInputElement>(null);
@@ -150,6 +153,34 @@ export default function ReportPage() {
 
   function toggleTag(t: string) {
     setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  }
+
+  function onAddressChange(val: string) {
+    setAddress(val);
+    setGeocodeError(false);
+    if (suggestDebounce.current) clearTimeout(suggestDebounce.current);
+    if (val.trim().length < 2) { setSuggestions([]); setSuggestOpen(false); return; }
+    suggestDebounce.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=5&accept-language=he&countrycodes=il`,
+          { headers: { "User-Agent": "eco-navigation/1.0 (https://eco-navigation.vercel.app)" } }
+        );
+        const data = await res.json();
+        setSuggestions(data ?? []);
+        setSuggestOpen((data ?? []).length > 0);
+      } catch { setSuggestions([]); }
+    }, 350);
+  }
+
+  function selectSuggestion(s: { display_name: string; lat: string; lon: string }) {
+    setLat(parseFloat(s.lat));
+    setLng(parseFloat(s.lon));
+    setAddress(s.display_name.split(",").slice(0, 2).join(", "));
+    setSuggestions([]);
+    setSuggestOpen(false);
+    setEditingAddress(false);
+    setGeocodeError(false);
   }
 
   async function geocodeAddress() {
@@ -560,16 +591,48 @@ export default function ReportPage() {
                 </div>
               </>
             ) : (
-              <input
-                autoFocus={editingAddress}
-                className="gh-input"
-                style={{ boxShadow: "none", border: "none", padding: 0, height: 32 }}
-                value={address}
-                onChange={e => { setAddress(e.target.value); setGeocodeError(false); }}
-                onBlur={geocodeAddress}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); geocodeAddress(); } }}
-                placeholder="הכנס/י כתובת…"
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  autoFocus={editingAddress}
+                  className="gh-input"
+                  style={{ boxShadow: "none", border: "none", padding: 0, height: 32 }}
+                  value={address}
+                  onChange={e => onAddressChange(e.target.value)}
+                  onBlur={() => { setTimeout(() => { setSuggestOpen(false); if (!suggestOpen) geocodeAddress(); }, 150); }}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); setSuggestOpen(false); geocodeAddress(); } if (e.key === "Escape") { setSuggestOpen(false); setEditingAddress(false); } }}
+                  placeholder="הכנס/י כתובת…"
+                  autoComplete="off"
+                />
+                {suggestOpen && suggestions.length > 0 && (
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0,
+                    background: "var(--surface)", border: "2px solid var(--ink)",
+                    borderRadius: 12, boxShadow: "4px 4px 0 var(--shadow-ink)",
+                    zIndex: 100, overflow: "hidden",
+                  }}>
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        onMouseDown={e => { e.preventDefault(); selectSuggestion(s); }}
+                        style={{
+                          display: "block", width: "100%", textAlign: "right",
+                          padding: "10px 12px",
+                          background: "transparent", border: "none",
+                          borderBottom: i < suggestions.length - 1 ? "1px solid var(--line)" : "none",
+                          fontFamily: "var(--font-sans)", fontSize: 13, fontWeight: 500,
+                          color: "var(--ink)", cursor: "pointer",
+                          direction: "rtl",
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "var(--paper-2)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <span style={{ fontSize: 12, color: "var(--muted)" }}>📍 </span>
+                        {s.display_name.split(",").slice(0, 2).join(", ")}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             {geocodeError && (
               <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, marginTop: 2 }}>
