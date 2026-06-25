@@ -230,9 +230,9 @@ export default function ChatPage() {
           const isMe = msg.sender_id === userId;
           const prof = profiles.get(msg.sender_id);
           const initial = (prof?.name ?? "?").charAt(0).toUpperCase();
-          const time = new Date(msg.created_at).toLocaleTimeString("he-IL", {
-            hour:"2-digit", minute:"2-digit",
-          });
+          const dt   = new Date(msg.created_at);
+          const time = dt.toLocaleTimeString("he-IL", { hour:"2-digit", minute:"2-digit" });
+          const date = dt.toLocaleDateString("he-IL", { day:"numeric", month:"numeric", year:"2-digit" });
 
           return (
             <div key={msg.id} style={{
@@ -262,7 +262,7 @@ export default function ChatPage() {
                   direction:"rtl",
                 }}>{msg.content}</div>
                 <div style={{ fontSize:10, color:"var(--muted)", fontWeight:500, paddingInline:4 }}>
-                  {time}
+                  {date} · {time}
                 </div>
               </div>
             </div>
