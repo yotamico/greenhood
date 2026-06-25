@@ -49,7 +49,7 @@ export default function ReportPage() {
   const [editingAddress,  setEditingAddress]  = useState(false);
   const [geocoding,       setGeocoding]       = useState(false);
   const [geocodeError,    setGeocodeError]    = useState(false);
-  const [suggestions,     setSuggestions]     = useState<{display_name: string; lat: string; lon: string}[]>([]);
+  const [suggestions,     setSuggestions]     = useState<{display_name: string; lat: string; lon: string; address: Record<string,string>}[]>([]);
   const [suggestOpen,     setSuggestOpen]     = useState(false);
   const suggestDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -155,6 +155,15 @@ export default function ReportPage() {
     setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
   }
 
+  function formatSuggestion(s: { display_name: string; address: Record<string,string> }): string {
+    const a = s.address;
+    const road   = a.road ?? a.pedestrian ?? a.footway ?? "";
+    const num    = a.house_number ?? "";
+    const city   = a.city ?? a.town ?? a.village ?? a.municipality ?? "";
+    if (road && city) return `${road}${num ? " " + num : ""}, ${city}`;
+    return s.display_name.split(",").slice(0, 3).join(", ");
+  }
+
   function onAddressChange(val: string) {
     setAddress(val);
     setGeocodeError(false);
@@ -163,20 +172,28 @@ export default function ReportPage() {
     suggestDebounce.current = setTimeout(async () => {
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=5&accept-language=he&countrycodes=il`,
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=10&addressdetails=1&accept-language=he&countrycodes=il`,
           { headers: { "User-Agent": "eco-navigation/1.0 (https://eco-navigation.vercel.app)" } }
         );
         const data = await res.json();
-        setSuggestions(data ?? []);
-        setSuggestOpen((data ?? []).length > 0);
+        /* deduplicate by formatted label */
+        const seen = new Set<string>();
+        const unique = (data ?? []).filter((s: { display_name: string; address: Record<string,string> }) => {
+          const label = formatSuggestion(s);
+          if (seen.has(label)) return false;
+          seen.add(label);
+          return true;
+        }).slice(0, 5);
+        setSuggestions(unique);
+        setSuggestOpen(unique.length > 0);
       } catch { setSuggestions([]); }
     }, 350);
   }
 
-  function selectSuggestion(s: { display_name: string; lat: string; lon: string }) {
+  function selectSuggestion(s: { display_name: string; lat: string; lon: string; address: Record<string,string> }) {
     setLat(parseFloat(s.lat));
     setLng(parseFloat(s.lon));
-    setAddress(s.display_name.split(",").slice(0, 2).join(", "));
+    setAddress(formatSuggestion(s));
     setSuggestions([]);
     setSuggestOpen(false);
     setEditingAddress(false);
@@ -627,7 +644,7 @@ export default function ReportPage() {
                         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                       >
                         <span style={{ fontSize: 12, color: "var(--muted)" }}>📍 </span>
-                        {s.display_name.split(",").slice(0, 2).join(", ")}
+                        {formatSuggestion(s)}
                       </button>
                     ))}
                   </div>
