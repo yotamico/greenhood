@@ -470,7 +470,7 @@ export default function ReportPage() {
                 stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
                 <path d="M12 5v14M5 12h14"/>
               </svg>
-              תמונה נוספת ({photos.length}/4)
+              גלרייה
             </button>
           )}
         </div>
