@@ -38,7 +38,8 @@ export default function ReportPage() {
   const aiSuggestionIdRef = useRef<string | null>(null);
 
   /* form state */
-  const [title,     setTitle]     = useState("");
+  const [title,       setTitle]       = useState("");
+  const [description, setDescription] = useState("");
   const [category,  setCategory]  = useState("furniture");
   const [condition, setCondition] = useState("שלם");
   const [tags,      setTags]      = useState<string[]>([]);
@@ -66,7 +67,7 @@ export default function ReportPage() {
     navigator.geolocation?.getCurrentPosition(pos => {
       setLat(pos.coords.latitude);
       setLng(pos.coords.longitude);
-      fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`)
+      fetch(`/api/geocode?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`)
         .then(r => r.json())
         .then(d => setAddress(d.display_name?.split(",").slice(0,2).join(", ") ?? ""))
         .catch(() => {});
@@ -171,10 +172,7 @@ export default function ReportPage() {
     if (val.trim().length < 2) { setSuggestions([]); setSuggestOpen(false); return; }
     suggestDebounce.current = setTimeout(async () => {
       try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(val)}&format=json&limit=10&addressdetails=1&accept-language=he&countrycodes=il`,
-          { headers: { "User-Agent": "eco-navigation/1.0 (https://eco-navigation.vercel.app)" } }
-        );
+        const res = await fetch(`/api/geocode/search?q=${encodeURIComponent(val)}&limit=10&addressdetails=1`);
         const data = await res.json();
         /* deduplicate by formatted label */
         const seen = new Set<string>();
@@ -206,10 +204,7 @@ export default function ReportPage() {
     setGeocoding(true);
     setGeocodeError(false);
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=he`,
-        { headers: { "User-Agent": "eco-navigation/1.0 (https://eco-navigation.vercel.app)" } }
-      );
+      const res = await fetch(`/api/geocode/search?q=${encodeURIComponent(query)}&limit=1`);
       const data = await res.json();
       if (data?.[0]) {
         setLat(parseFloat(data[0].lat));
@@ -240,7 +235,7 @@ export default function ReportPage() {
 
     const { data: item, error } = await supabase.from("items").insert([{
       reporter_id: userId,
-      title, category, condition, tags, address,
+      title, description: description.trim() || null, category, condition, tags, address,
       location: lat && lng ? `POINT(${lng} ${lat})` : null,
       lat: lat ?? null,
       lng: lng ?? null,
@@ -512,6 +507,19 @@ export default function ReportPage() {
           onChange={e => setTitle(e.target.value)}
           placeholder="למשל: ספה תלת מושבית"
           style={{ marginBottom: 20 }}
+        />
+
+        {/* ── Description ── */}
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 8 }}>
+          תיאור החפץ
+        </div>
+        <textarea
+          className="gh-input"
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          placeholder="מצב, גודל, פרטים נוספים…"
+          rows={3}
+          style={{ marginBottom: 20, resize: "none", lineHeight: 1.5, height: "auto", padding: "12px 16px" }}
         />
 
         {/* ── Category ── */}

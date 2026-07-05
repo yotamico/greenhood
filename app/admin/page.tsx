@@ -2,12 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser, getUserProfiles, getActivityLogs, getReports, signOut } from "@/lib/supabase";
-import type { UserProfile, ActivityLog, Report } from "@/lib/supabase";
+import { supabase, getCurrentUser, signOut } from "@/lib/supabase";
 
 const ADMIN_EMAIL = "yotamico@gmail.com";
 
-type Tab = "overview" | "users" | "logs" | "reports";
+type Tab = "overview" | "moderation" | "items" | "users";
+
+interface Profile {
+  id: string;
+  name: string | null;
+  avatar_color: string | null;
+  xp: number | null;
+  created_at: string;
+}
+
+interface Item {
+  id: string;
+  title: string;
+  category: string | null;
+  condition: string | null;
+  address: string;
+  status: string;
+  moderation_status: "pending" | "approved" | "rejected";
+  created_at: string;
+  reporter_id: string;
+  item_images: { url: string; is_primary: boolean }[];
+}
 
 function timeAgo(iso: string): string {
   const h = Math.floor((Date.now() - new Date(iso).getTime()) / 3_600_000);
@@ -16,20 +36,18 @@ function timeAgo(iso: string): string {
   return `לפני ${Math.floor(h / 24)} ימים`;
 }
 
-const ACTION_LABEL: Record<string, string> = {
-  login:    "🔑 כניסה",
-  signup:   "✨ הרשמה",
-  report:   "📦 דיווח",
-  navigate: "🧭 ניווט",
+const MODERATION_LABEL: Record<Item["moderation_status"], string> = {
+  pending:  "⏳ ממתין",
+  approved: "✅ אושר",
+  rejected: "❌ נדחה",
 };
 
 export default function AdminPage() {
   const router = useRouter();
   const [ready,    setReady]    = useState(false);
   const [tab,      setTab]      = useState<Tab>("overview");
-  const [profiles, setProfiles] = useState<UserProfile[]>([]);
-  const [logs,     setLogs]     = useState<ActivityLog[]>([]);
-  const [reports,  setReports]  = useState<Report[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [items,    setItems]    = useState<Item[]>([]);
 
   useEffect(() => {
     getCurrentUser().then(user => {
@@ -43,10 +61,25 @@ export default function AdminPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadAll() {
-    const [p, l, r] = await Promise.all([getUserProfiles(), getActivityLogs(), getReports()]);
-    setProfiles(p);
-    setLogs(l);
-    setReports(r);
+    const [{ data: p }, { data: i }] = await Promise.all([
+      supabase.from("profiles").select("id,name,avatar_color,xp,created_at").order("created_at", { ascending: false }),
+      supabase.from("items")
+        .select("id,title,category,condition,address,status,moderation_status,created_at,reporter_id,item_images(url,is_primary)")
+        .order("created_at", { ascending: false })
+        .limit(200),
+    ]);
+    setProfiles((p ?? []) as Profile[]);
+    setItems((i ?? []) as unknown as Item[]);
+  }
+
+  async function moderate(id: string, decision: "approved" | "rejected") {
+    const reason = decision === "rejected" ? window.prompt("סיבת דחייה (יוצג למדווח):") : null;
+    if (decision === "rejected" && reason === null) return; // cancelled
+    await supabase.from("items").update({
+      moderation_status: decision,
+      moderation_reason: decision === "rejected" ? reason : null,
+    }).eq("id", id);
+    setItems(prev => prev.map(it => it.id === id ? { ...it, moderation_status: decision } : it));
   }
 
   if (!ready) {
@@ -59,17 +92,12 @@ export default function AdminPage() {
     );
   }
 
-  const uniqueUsers   = new Set(logs.map(l => l.user_email)).size;
-  const todayLogins   = logs.filter(l => l.action === "login" &&
-    new Date(l.created_at).toDateString() === new Date().toDateString()).length;
-  const totalReports  = reports.length;
-  const totalNavs     = logs.filter(l => l.action === "navigate").length;
+  const pending      = items.filter(i => i.moderation_status === "pending");
+  const activeCount  = items.filter(i => i.status === "active" && i.moderation_status === "approved").length;
+  const todayItems   = items.filter(i => new Date(i.created_at).toDateString() === new Date().toDateString()).length;
 
-  // reports per user
-  const reportsByUser: Record<string, number> = {};
-  reports.forEach(r => {
-    if (r.user_email) reportsByUser[r.user_email] = (reportsByUser[r.user_email] ?? 0) + 1;
-  });
+  const itemsByUser: Record<string, number> = {};
+  items.forEach(i => { itemsByUser[i.reporter_id] = (itemsByUser[i.reporter_id] ?? 0) + 1; });
 
   return (
     <div style={s.root} dir="rtl">
@@ -83,13 +111,13 @@ export default function AdminPage() {
 
       {/* tabs */}
       <div style={s.tabBar}>
-        {(["overview", "users", "logs", "reports"] as Tab[]).map(t => (
+        {(["overview", "moderation", "items", "users"] as Tab[]).map(t => (
           <button
             key={t}
             style={{ ...s.tabBtn, ...(tab === t ? s.tabBtnActive : {}) }}
             onClick={() => setTab(t)}
           >
-            {{ overview: "סקירה", users: "משתמשים", logs: "פעילות", reports: "דיווחים" }[t]}
+            {{ overview: "סקירה", moderation: `מודרציה${pending.length ? ` (${pending.length})` : ""}`, items: "פריטים", users: "משתמשים" }[t]}
           </button>
         ))}
       </div>
@@ -100,20 +128,63 @@ export default function AdminPage() {
         {tab === "overview" && (
           <div style={s.grid}>
             <StatCard emoji="👥" label="משתמשים רשומים" value={profiles.length} />
-            <StatCard emoji="🔑" label="כניסות היום"     value={todayLogins} />
-            <StatCard emoji="📦" label="סה״כ דיווחים"    value={totalReports} />
-            <StatCard emoji="🧭" label="ניווטים"          value={totalNavs} />
+            <StatCard emoji="📦" label="דיווחים היום"     value={todayItems} />
+            <StatCard emoji="✅" label="פריטים פעילים"    value={activeCount} />
+            <StatCard emoji="⏳" label="ממתינים למודרציה" value={pending.length} />
 
             <div style={{ ...s.card, gridColumn: "1 / -1" }}>
-              <p style={s.cardTitle}>כניסות אחרונות</p>
-              {logs.filter(l => l.action === "login" || l.action === "signup").slice(0, 8).map(l => (
-                <div key={l.id} style={s.logRow}>
-                  <span style={s.logAction}>{ACTION_LABEL[l.action] ?? l.action}</span>
-                  <span style={s.logEmail}>{l.user_email}</span>
-                  <span style={s.logTime}>{timeAgo(l.created_at)}</span>
+              <p style={s.cardTitle}>דיווחים אחרונים</p>
+              {items.length === 0 && <p style={s.empty}>אין דיווחים עדיין</p>}
+              {items.slice(0, 8).map(i => (
+                <div key={i.id} style={s.logRow}>
+                  <span style={s.logAction}>{MODERATION_LABEL[i.moderation_status]}</span>
+                  <span style={s.logEmail}>{i.title}</span>
+                  <span style={s.logTime}>{timeAgo(i.created_at)}</span>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* ── מודרציה ── */}
+        {tab === "moderation" && (
+          <div style={s.list}>
+            {pending.length === 0 && <p style={s.empty}>אין פריטים הממתינים למודרציה 🎉</p>}
+            {pending.map(i => {
+              const img = i.item_images?.find(im => im.is_primary) ?? i.item_images?.[0];
+              return (
+                <div key={i.id} style={s.card}>
+                  <div style={s.modRow}>
+                    {img && <img src={img.url} alt="" style={s.modThumb} />}
+                    <div style={{ flex: 1 }}>
+                      <p style={s.reportType}>{i.title}{i.category ? ` · ${i.category}` : ""}</p>
+                      <p style={s.reportStreet}>{i.address}</p>
+                      <p style={s.reportMeta}>{timeAgo(i.created_at)}</p>
+                    </div>
+                  </div>
+                  <div style={s.modActions}>
+                    <button style={s.approveBtn} onClick={() => moderate(i.id, "approved")}>✅ אשר</button>
+                    <button style={s.rejectBtn} onClick={() => moderate(i.id, "rejected")}>❌ דחה</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── פריטים ── */}
+        {tab === "items" && (
+          <div style={s.list}>
+            {items.length === 0 && <p style={s.empty}>אין פריטים עדיין</p>}
+            {items.map(i => (
+              <div key={i.id} style={s.card} onClick={() => router.push(`/items/${i.id}`)}>
+                <p style={s.reportType}>{i.title}{i.category ? ` · ${i.category}` : ""}</p>
+                <p style={s.reportStreet}>{i.address}</p>
+                <p style={s.reportMeta}>
+                  {MODERATION_LABEL[i.moderation_status]} · {i.status} · {timeAgo(i.created_at)}
+                </p>
+              </div>
+            ))}
           </div>
         )}
 
@@ -124,45 +195,17 @@ export default function AdminPage() {
             {profiles.map(u => (
               <div key={u.id} style={s.card}>
                 <div style={s.userRow}>
-                  <div style={s.avatar}>{u.email[0].toUpperCase()}</div>
+                  <div style={{ ...s.avatar, background: u.avatar_color ?? "#1a73e8" }}>
+                    {(u.name ?? "?")[0]?.toUpperCase()}
+                  </div>
                   <div style={{ flex: 1 }}>
-                    <p style={s.userEmail}>{u.email}</p>
-                    <p style={s.userMeta}>נרשם {timeAgo(u.created_at)}</p>
+                    <p style={s.userEmail}>{u.name ?? "ללא שם"}</p>
+                    <p style={s.userMeta}>נרשם {timeAgo(u.created_at)} · {u.xp ?? 0} XP</p>
                   </div>
                   <div style={s.userStats}>
-                    <span style={s.statBadge}>📦 {reportsByUser[u.email] ?? 0}</span>
+                    <span style={s.statBadge}>📦 {itemsByUser[u.id] ?? 0}</span>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── לוג פעילות ── */}
-        {tab === "logs" && (
-          <div style={s.list}>
-            {logs.length === 0 && <p style={s.empty}>אין פעילות עדיין</p>}
-            {logs.map(l => (
-              <div key={l.id} style={s.logCard}>
-                <span style={s.logAction}>{ACTION_LABEL[l.action] ?? l.action}</span>
-                <span style={s.logEmail}>{l.user_email}</span>
-                <span style={s.logTime}>{timeAgo(l.created_at)}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ── דיווחים ── */}
-        {tab === "reports" && (
-          <div style={s.list}>
-            {reports.length === 0 && <p style={s.empty}>אין דיווחים עדיין</p>}
-            {reports.map(r => (
-              <div key={r.id} style={s.card}>
-                <p style={s.reportType}>{r.item_type}{r.category ? ` · ${r.category}` : ""}</p>
-                <p style={s.reportStreet}>{r.street_name}</p>
-                <p style={s.reportMeta}>
-                  {r.user_email ?? "אנונימי"} · {timeAgo(r.created_at)}
-                </p>
               </div>
             ))}
           </div>
@@ -258,6 +301,20 @@ const s: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: 6,
+    cursor: "default",
+  },
+  modRow: { display: "flex", alignItems: "center", gap: 12 },
+  modThumb: { width: 56, height: 56, borderRadius: 10, objectFit: "cover", flexShrink: 0 },
+  modActions: { display: "flex", gap: 8, marginTop: 4 },
+  approveBtn: {
+    flex: 1, background: "#1f4d2e", color: "#7cf59a", border: "1px solid #2e6b41",
+    borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer",
+    fontFamily: "'Heebo', sans-serif",
+  },
+  rejectBtn: {
+    flex: 1, background: "#4d1f1f", color: "#f59c9c", border: "1px solid #6b2e2e",
+    borderRadius: 8, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer",
+    fontFamily: "'Heebo', sans-serif",
   },
   cardTitle: { fontSize: 14, fontWeight: 700, color: "#b0b8d4", margin: "0 0 8px" },
   statValue: { fontSize: 32, fontWeight: 900, color: "#e8eaf2", lineHeight: 1 },
@@ -269,15 +326,6 @@ const s: Record<string, React.CSSProperties> = {
     padding: "6px 0",
     borderBottom: "1px solid #2e3348",
   },
-  logCard: {
-    background: "#1a1d27",
-    border: "1px solid #2e3348",
-    borderRadius: 10,
-    padding: "10px 14px",
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
   logAction: { fontSize: 13, fontWeight: 600, color: "#e8eaf2", flexShrink: 0, minWidth: 80 },
   logEmail:  { fontSize: 12, color: "#7880a0", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   logTime:   { fontSize: 11, color: "#4a5070", flexShrink: 0 },
@@ -285,7 +333,7 @@ const s: Record<string, React.CSSProperties> = {
   userRow:   { display: "flex", alignItems: "center", gap: 12 },
   avatar: {
     width: 40, height: 40, borderRadius: "50%",
-    background: "#1a73e8", color: "#fff",
+    color: "#fff",
     display: "flex", alignItems: "center", justifyContent: "center",
     fontSize: 16, fontWeight: 800, flexShrink: 0,
   },

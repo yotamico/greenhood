@@ -92,7 +92,7 @@ export default function ItemDetailPage() {
         let heStreet: string | null = null;
         if (it.lat && it.lng) {
           try {
-            const rg = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${it.lat}&lon=${it.lng}&format=json&accept-language=he`);
+            const rg = await fetch(`/api/geocode?lat=${it.lat}&lng=${it.lng}`);
             const geo = await rg.json();
             heStreet = geo.address?.road ?? null;
           } catch { /* ignore */ }
@@ -127,7 +127,7 @@ export default function ItemDetailPage() {
     let lat = item.lat, lng = item.lng;
     if (!lat || !lng) {
       try {
-        const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(item.address)}&format=json&limit=1`);
+        const r = await fetch(`/api/geocode/search?q=${encodeURIComponent(item.address)}&limit=1`);
         const d = await r.json();
         if (d[0]) { lat = parseFloat(d[0].lat); lng = parseFloat(d[0].lon); }
       } catch { /* ignore */ }

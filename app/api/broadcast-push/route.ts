@@ -11,8 +11,13 @@ export async function POST(req: NextRequest) {
   }
   webpush.setVapidDetails(subject, pubKey, privKey);
 
-  // Use service role key so RLS doesn't block reading subscriptions
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  // Service role key is required so RLS doesn't block reading other users' subscriptions.
+  // Falling back to the anon key here used to fail silently (0 notifications sent, no error).
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) {
+    console.error("[broadcast-push] SUPABASE_SERVICE_ROLE_KEY is not set — cannot read push_subscriptions across users");
+    return NextResponse.json({ ok: false, error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });
+  }
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     serviceKey
