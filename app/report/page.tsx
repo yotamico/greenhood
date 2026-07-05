@@ -693,24 +693,6 @@ export default function ReportPage() {
           />
         </div>
 
-        {/* ── XP hint ── */}
-        <div style={{
-          padding: 12, background: "var(--primary-tint)", borderRadius: 14,
-          border: "2px solid var(--ink)", boxShadow: "3px 3px 0 var(--shadow-ink)",
-          display: "flex", gap: 12, alignItems: "center",
-          marginBottom: 8,
-        }}>
-          <div style={{
-            width: 38, height: 38, borderRadius: 10,
-            background: "var(--primary)", color: "white", border: "2px solid var(--ink)",
-            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            fontSize: 20,
-          }}>♻️</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: "var(--primary-dark)" }}>+50 XP</div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-soft)" }}>כל דיווח מציל ~8 ק״ג מהטמנה</div>
-          </div>
-        </div>
       </div>
 
       {/* ── FOOTER — single publish button ── */}
@@ -741,6 +723,16 @@ export default function ReportPage() {
             <polyline points="20 6 9 17 4 12"/>
           </svg>
           {loading ? "שומר…" : "פרסם דיווח"}
+          {!loading && (
+            <span style={{
+              display: "flex", alignItems: "center", gap: 4,
+              background: "var(--surface)", border: "1.5px solid var(--ink)",
+              borderRadius: 999, padding: "3px 10px 3px 8px",
+            }}>
+              <span style={{ fontSize: 13 }}>♻️</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--primary-dark)" }}>50+</span>
+            </span>
+          )}
         </button>
         {!title && (
           <div style={{ marginTop: 8, textAlign: "center", fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>
