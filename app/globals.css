@@ -134,3 +134,8 @@ html, body {
   from { opacity: 0; transform: scale(.97) translateY(6px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
+
+@keyframes feedbackSlideIn {
+  from { transform: translateX(-100%); opacity: 0.4; }
+  to   { transform: translateX(0); opacity: 1; }
+}

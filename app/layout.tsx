@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Rubik } from "next/font/google";
 import "./globals.css";
+import { FeedbackWidget } from "@/components/Feedback/FeedbackWidget";
 
 const rubik = Rubik({
   variable: "--font-rubik",
@@ -43,6 +44,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full" style={{ background: "var(--paper)", color: "var(--ink)" }}>
         {children}
+        <FeedbackWidget />
       </body>
     </html>
   );
