@@ -66,6 +66,12 @@ function DraggableTab({ onOpen }: { onOpen: () => void }) {
   }
   function onPointerUp() {
     if (dxRef.current > OPEN_THRESHOLD) onOpen();
+    reset();
+  }
+  // Mobile browsers fire pointercancel (not pointerup) when the gesture is interrupted —
+  // e.g. the map underneath claims the touch. Without this, dx got stuck mid-drag forever,
+  // leaving the peek panel visibly frozen open.
+  function reset() {
     dxRef.current = 0;
     setDx(0);
     setDragging(false);
@@ -92,6 +98,8 @@ function DraggableTab({ onOpen }: { onOpen: () => void }) {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={reset}
+        onLostPointerCapture={reset}
         aria-label="שליחת משוב"
         style={{
           position: "fixed", left: 0, top,
