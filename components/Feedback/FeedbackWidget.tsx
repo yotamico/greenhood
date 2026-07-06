@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
 
-const OPEN_THRESHOLD = 90; // px dragged inward (rightward) to trigger open
+const TAP_THRESHOLD = 8; // max total pointer movement (px) still counted as a tap, not a reposition drag
 
 const CATEGORIES = [
   { id: "improve", label: "שיפור", emoji: "💡", color: "var(--primary)" },
@@ -41,93 +41,76 @@ export function FeedbackWidget() {
   );
 }
 
-/* ── Draggable edge tab — flush to the left, drag up/down to reposition, drag inward to open ── */
+/* ── Edge tab — flush to the left, drag up/down to reposition, tap to open ──
+   A horizontal "drag inward past a threshold to open" gesture used to trigger this, but
+   starting a horizontal drag right at the screen edge collides with Android's system
+   edge-swipe-back gesture: the OS can claim the touch before the page ever sees a release
+   event, leaving the drag state stuck. A tap has ~0 movement, so it never enters that
+   gesture zone at all — reposition (vertical drag) and open (tap) are told apart purely
+   by how far the pointer travelled between down and up. */
 function DraggableTab({ onOpen }: { onOpen: () => void }) {
   const [top, setTop] = useState(() => (typeof window !== "undefined" ? window.innerHeight * 0.44 : 360));
-  const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
   const start = useRef<{ x: number; y: number; top: number } | null>(null);
-  const dxRef = useRef(0); // live pull distance, read at release time to avoid stale state
-
-  const armed = dx > OPEN_THRESHOLD;
+  const movedRef = useRef(0); // furthest total distance from the start point, read at release time
 
   function onPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     e.currentTarget.setPointerCapture(e.pointerId);
     start.current = { x: e.clientX, y: e.clientY, top };
+    movedRef.current = 0;
     setDragging(true);
   }
   function onPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
     if (!start.current) return;
-    const pull = Math.max(0, e.clientX - start.current.x);
-    dxRef.current = pull;
-    setDx(pull);
-    const ny = start.current.top + (e.clientY - start.current.y);
-    setTop(Math.min(window.innerHeight - 150, Math.max(70, ny)));
+    const dx = e.clientX - start.current.x;
+    const dy = e.clientY - start.current.y;
+    movedRef.current = Math.max(movedRef.current, Math.hypot(dx, dy));
+    setTop(Math.min(window.innerHeight - 150, Math.max(70, start.current.top + dy)));
   }
   function onPointerUp() {
-    if (dxRef.current > OPEN_THRESHOLD) onOpen();
+    if (movedRef.current < TAP_THRESHOLD) onOpen();
     reset();
   }
   // Mobile browsers fire pointercancel (not pointerup) when the gesture is interrupted —
-  // e.g. the map underneath claims the touch. Without this, dx got stuck mid-drag forever,
-  // leaving the peek panel visibly frozen open.
+  // e.g. the map underneath claims the touch. Reset defensively either way.
   function reset() {
-    dxRef.current = 0;
-    setDx(0);
     setDragging(false);
     start.current = null;
   }
 
   return (
-    <>
-      {/* peek of the feedback panel revealed as the tab is pulled inward */}
-      <div style={{
-        position: "fixed", left: 0, top: 0, bottom: 0,
-        width: Math.min(dx * 1.6, 300),
-        background: "var(--primary-tint)",
-        borderRight: dx > 4 ? "2px solid var(--ink)" : "none",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        opacity: Math.min(dx / 80, 1), pointerEvents: "none",
-        transition: dragging ? "none" : "all var(--d-base) var(--ease)",
-        zIndex: 59,
-      }}>
-        {armed && <span style={{ fontWeight: 800, fontSize: 13, color: "var(--ink)", whiteSpace: "nowrap" }}>שחררו לפתיחה →</span>}
-      </div>
-
-      <button
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={reset}
-        onLostPointerCapture={reset}
-        aria-label="שליחת משוב"
-        style={{
-          position: "fixed", left: 0, top,
-          transform: `translateX(${dx}px)`,
-          background: armed ? "var(--primary)" : "var(--ink)",
-          color: armed ? "var(--ink)" : "var(--paper)",
-          border: "2.5px solid var(--ink)", borderLeft: "none",
-          borderRadius: "0 16px 16px 0",
-          boxShadow: "3px 3px 0 var(--shadow-ink)",
-          padding: "14px 9px", cursor: dragging ? "grabbing" : "grab",
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-          fontFamily: "var(--font-sans)", touchAction: "none",
-          transition: dragging ? "none" : "transform var(--d-base) var(--ease), background var(--d-fast) var(--ease)",
-          zIndex: 60,
-        }}
-      >
-        <span style={{ display: "flex", flexDirection: "column", gap: 2, opacity: 0.55 }}>
-          {[0, 1].map(r => (
-            <span key={r} style={{ display: "flex", gap: 2 }}>
-              {[0, 1].map(c => <span key={c} style={{ width: 3, height: 3, borderRadius: 9, background: "currentColor" }} />)}
-            </span>
-          ))}
-        </span>
-        <span style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontWeight: 800, fontSize: 13, letterSpacing: "0.06em" }}>
-          Feedback
-        </span>
-      </button>
-    </>
+    <button
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={reset}
+      onLostPointerCapture={reset}
+      aria-label="שליחת משוב"
+      style={{
+        position: "fixed", left: 0, top,
+        background: "var(--ink)", color: "var(--paper)",
+        border: "2.5px solid var(--ink)", borderLeft: "none",
+        borderRadius: "0 16px 16px 0",
+        boxShadow: dragging ? "1.5px 1.5px 0 var(--shadow-ink)" : "3px 3px 0 var(--shadow-ink)",
+        transform: dragging ? "translate(1.5px,1.5px)" : "none",
+        padding: "14px 9px", cursor: dragging ? "grabbing" : "grab",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+        fontFamily: "var(--font-sans)", touchAction: "none",
+        transition: dragging ? "none" : "top var(--d-base) var(--ease), transform var(--d-fast) var(--ease), box-shadow var(--d-fast) var(--ease)",
+        zIndex: 60,
+      }}
+    >
+      <span style={{ display: "flex", flexDirection: "column", gap: 2, opacity: 0.55 }}>
+        {[0, 1].map(r => (
+          <span key={r} style={{ display: "flex", gap: 2 }}>
+            {[0, 1].map(c => <span key={c} style={{ width: 3, height: 3, borderRadius: 9, background: "currentColor" }} />)}
+          </span>
+        ))}
+      </span>
+      <span style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontWeight: 800, fontSize: 13, letterSpacing: "0.06em" }}>
+        Feedback
+      </span>
+    </button>
   );
 }
 
