@@ -37,7 +37,6 @@ Your job:
 - components/NotificationsPopup.tsx — push notification opt-in prompt
 - components/ui/TabBar.tsx         — bottom tab bar + push subscription registration
 - lib/supabase.ts              — Supabase client (+ header-sanitizing fetch patch, see below) and auth helpers
-- lib/nes-ziona-streets.ts      — 236 streets with collection_day + takeout_day + lat/lng
 
 Only one map implementation and one report form exist now — if you ever see a second one, it's a stray duplicate left over from a rewrite; delete it, don't maintain both.
 
@@ -49,7 +48,7 @@ Only one map implementation and one report form exist now — if you ever see a 
 - `saved_items` — per-user saved items
 - `ai_suggestions` — Claude Vision suggestion telemetry
 - `push_subscriptions` — user_id, endpoint, subscription (jsonb), lat, lng; RPC `get_push_subscriptions_nearby(lat,lng,radius_km)` and `increment_xp`
-- `clearance_schedule` — street_name, clearance_day
+- `street_schedules` — city, street_name, collection_day, takeout_day, lat, lng (unique on city+street_name). Single source of truth for garbage-collection schedules, used by the map (street mode), feed, and item detail pages. Edited directly via Supabase Studio/SQL — no admin UI yet.
 
 New items land as `moderation_status: pending` and only show on the map/feed once approved via the admin moderation tab.
 
@@ -59,6 +58,7 @@ New items land as `moderation_status: pending` and only show on the map/feed onc
 - Geocoding always goes through `/api/geocode` (reverse) and `/api/geocode/search` (forward) — never call Nominatim directly from client code, to keep the User-Agent header and rate-limit-friendly behavior in one place.
 
 ## Collection schedule
-- 236 streets in Nes Ziona (lib/nes-ziona-streets.ts)
-- Each street has: collection_day (יום פינוי) and takeout_day (יום הוצאה)
+- Lives entirely in the `street_schedules` Supabase table (see Data model above) — not in code. 242 streets for Nes Ziona today; the `city` column exists so other cities can be added as rows without a code change.
+- Each row has: collection_day (יום פינוי) and takeout_day (יום הוצאה)
 - Days in Hebrew: ראשון, שני, שלישי, רביעי, חמישי, שישי
+- To update a city's schedule, edit rows in `street_schedules` directly (Supabase Studio or SQL) — no redeploy needed.

@@ -77,7 +77,7 @@ export default function ItemDetailPage() {
       const [{ data: rep }, { data: sv }, { data: sched }, { count: sc }, { count: mc }] = await Promise.all([
         supabase.from("profiles").select("name,avatar_color,xp").eq("id", it.reporter_id).single(),
         supabase.from("saved_items").select("item_id").eq("user_id", session.user.id).eq("item_id", id).maybeSingle(),
-        supabase.from("clearance_schedule").select("street_name,clearance_day"),
+        supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה"),
         supabase.from("saved_items").select("*", { count:"exact", head:true }).eq("item_id", id),
         supabase.from("messages").select("*", { count:"exact", head:true }).eq("item_id", id),
       ]);
@@ -101,7 +101,7 @@ export default function ItemDetailPage() {
         const match = sched.find(s =>
           haystack.includes(norm(s.street_name)) || norm(s.street_name).includes(haystack.split(",")[0])
         );
-        if (match) setClearanceDay(match.clearance_day);
+        if (match) setClearanceDay(match.collection_day);
       }
 
       setLoading(false);

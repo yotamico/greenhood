@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
 import NotificationsPopup from "@/components/NotificationsPopup";
-import { NES_ZIONA_STREETS } from "@/lib/nes-ziona-streets";
 
 /* ── dynamic import — MapLibre needs window ── */
 const GHMap = dynamic(() => import("@/components/Map/GHMapLibre"), {
@@ -200,6 +199,12 @@ function MapPageInner() {
   const [streetLoading,    setStreetLoading]    = useState(false);
   const [streetError,      setStreetError]      = useState(false);
   const [streetCount,      setStreetCount]      = useState(0);
+  const [streetSchedule,   setStreetSchedule]   = useState<{ street_name: string; collection_day: string }[]>([]);
+
+  useEffect(() => {
+    supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה")
+      .then(({ data }) => setStreetSchedule((data ?? []) as { street_name: string; collection_day: string }[]));
+  }, []);
 
   /* navigation mode */
   const [navDest,        setNavDest]        = useState<NavDest | null>(null);
@@ -213,7 +218,7 @@ function MapPageInner() {
   const routeDestRef = useRef<string | null>(null);
   navDestRef.current = navDest;
 
-  /* compute scheduled streets from local NES_ZIONA_STREETS data */
+  /* compute scheduled streets from street_schedules (Supabase) */
   const streetModeHebrewDay = useMemo(() => {
     const offset = streetModeDay === "מחר" ? 1 : streetModeDay === "מחרתיים" ? 2 : 0;
     const d = new Date(); d.setDate(d.getDate() + offset);
@@ -222,10 +227,10 @@ function MapPageInner() {
 
   const streetModeNames = useMemo(() => {
     if (!streetModeActive) return [];
-    return NES_ZIONA_STREETS
+    return streetSchedule
       .filter(s => s.collection_day === streetModeHebrewDay)
-      .map(s => s.name);
-  }, [streetModeActive, streetModeHebrewDay]);
+      .map(s => s.street_name);
+  }, [streetModeActive, streetModeHebrewDay, streetSchedule]);
 
   /* fetch full street geometry from Overpass whenever mode or day changes */
   useEffect(() => {

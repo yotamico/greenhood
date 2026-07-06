@@ -41,7 +41,7 @@ export default function FeedPage() {
   const [saved, setSaved]   = useState<Set<string>>(new Set());
   const [search,setSearch]  = useState("");
   const [authed,setAuthed]  = useState(false);
-  const [scheduleData, setScheduleData] = useState<{street_name:string; clearance_day:string}[]>([]);
+  const [scheduleData, setScheduleData] = useState<{street_name:string; collection_day:string}[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data:{session}}) => {
@@ -51,8 +51,8 @@ export default function FeedPage() {
   }, [router]);
 
   useEffect(() => {
-    supabase.from("clearance_schedule").select("street_name,clearance_day")
-      .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;clearance_day:string}[]));
+    supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה")
+      .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;collection_day:string}[]));
   }, []);
 
   useEffect(() => {
@@ -71,7 +71,7 @@ export default function FeedPage() {
 
   const tomorrowHebrewDay = HEBREW_DAYS[(new Date().getDay() + 1) % 7];
   const tomorrowStreets = new Set(
-    scheduleData.filter(s => s.clearance_day === tomorrowHebrewDay).map(s => s.street_name)
+    scheduleData.filter(s => s.collection_day === tomorrowHebrewDay).map(s => s.street_name)
   );
 
   const displayed = items.filter(it => {
