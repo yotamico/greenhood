@@ -202,7 +202,12 @@ function FeedbackPanel({ userId, onClose }: { userId: string; onClose: () => voi
             עוזרים לנו לבנות שכונה טובה יותר
           </div>
         </div>
-        <div style={{ fontSize: 26 }}>📣</div>
+        <button onClick={onClose} aria-label="סגירה" style={{
+          flexShrink: 0, width: 34, height: 34, borderRadius: 9,
+          background: "var(--surface)", border: "2px solid var(--ink)",
+          boxShadow: "2px 2px 0 var(--shadow-ink)", cursor: "pointer",
+          fontWeight: 900, fontSize: 15, lineHeight: 1,
+        }}>✕</button>
       </div>
 
       {/* CONTENT */}
@@ -337,7 +342,6 @@ function FeedbackPanel({ userId, onClose }: { userId: string; onClose: () => voi
       </div>
 
       <TabBar />
-      <CloseButton onClose={onClose} />
     </div>
   );
 }
