@@ -41,14 +41,22 @@ export default function FeedPage() {
   const [saved, setSaved]   = useState<Set<string>>(new Set());
   const [search,setSearch]  = useState("");
   const [authed,setAuthed]  = useState(false);
+  const [userId,setUserId]  = useState<string|null>(null);
   const [scheduleData, setScheduleData] = useState<{street_name:string; collection_day:string}[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data:{session}}) => {
       if (!session) { router.replace("/login"); return; }
+      setUserId(session.user.id);
       setAuthed(true);
     });
   }, [router]);
+
+  useEffect(() => {
+    if (!userId) return;
+    supabase.from("saved_items").select("item_id").eq("user_id", userId)
+      .then(({ data }) => setSaved(new Set((data ?? []).map(r => r.item_id as string))));
+  }, [userId]);
 
   useEffect(() => {
     supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה")
@@ -75,6 +83,7 @@ export default function FeedPage() {
   );
 
   const displayed = items.filter(it => {
+    if (filter === "saved")  return saved.has(it.id);
     if (filter === "urgent") return it.pickup_day === today || it.pickup_day === tomorrow;
     if (filter !== "all")    return it.category === filter;
     return true;
@@ -86,8 +95,12 @@ export default function FeedPage() {
   const col1 = displayed.filter((_,i) => i % 2 === 0);
   const col2 = displayed.filter((_,i) => i % 2 === 1);
 
-  function toggleSave(id:string) {
-    setSaved(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  async function toggleSave(id:string) {
+    if (!userId) return;
+    const isSaved = saved.has(id);
+    if (isSaved) await supabase.from("saved_items").delete().eq("user_id", userId).eq("item_id", id);
+    else         await supabase.from("saved_items").insert({ user_id: userId, item_id: id });
+    setSaved(s => { const n = new Set(s); isSaved ? n.delete(id) : n.add(id); return n; });
   }
 
   if (!authed) return null;
