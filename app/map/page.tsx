@@ -222,10 +222,19 @@ function MapPageInner() {
   const [navSteps,       setNavSteps]       = useState<OsrmStep[]>([]);
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [heading,        setHeading]        = useState<number | null>(null);
+  const [showArrivedPopup, setShowArrivedPopup] = useState(false);
   const prevPosRef = useRef<[number,number] | null>(null);
+  const arrivedRef = useRef(false);
   /* dedup ref — tracks which destination we already fetched a route for */
   const routeDestRef = useRef<string | null>(null);
   navDestRef.current = navDest;
+
+  const endNavigation = useCallback(() => {
+    setNavDest(null); setNavRoute(null); setNavInfo(null);
+    setNavSteps([]); setCurrentStepIdx(0);
+    setShowArrivedPopup(false); arrivedRef.current = false;
+    router.replace("/map");
+  }, [router]);
 
   /* compute scheduled streets from street_schedules (Supabase) */
   const streetModeHebrewDay = useMemo(() => {
@@ -328,6 +337,8 @@ function MapPageInner() {
       setCurrentStepIdx(0);
       setNavDest({ lat: parseFloat(lat), lng: parseFloat(lng), title });
       setSheetPct(HIDDEN);
+      setShowArrivedPopup(false);
+      arrivedRef.current = false;
     } else {
       routeDestRef.current = null;
       setNavDest(null);
@@ -335,8 +346,19 @@ function MapPageInner() {
       setNavInfo(null);
       setNavSteps([]);
       setCurrentStepIdx(0);
+      setShowArrivedPopup(false);
+      arrivedRef.current = false;
     }
   }, [searchParams]);
+
+  /* pop "arrived" the moment the user gets within 20m of the nav destination */
+  useEffect(() => {
+    if (!navDest || !userPos || arrivedRef.current) return;
+    if (haversine(userPos, [navDest.lat, navDest.lng]) <= 20) {
+      arrivedRef.current = true;
+      setShowArrivedPopup(true);
+    }
+  }, [userPos, navDest]);
 
   /* fetch OSRM route — re-runs when either navDest OR userPos changes.
      The dedup ref prevents re-fetching on every GPS position update. */
@@ -515,6 +537,38 @@ function MapPageInner() {
         />
       </div>
 
+      {/* ── Arrived at destination popup ── */}
+      {showArrivedPopup && navDest && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(45,42,36,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20,
+        }}>
+          <div style={{
+            background: "var(--surface)", border: "2.5px solid var(--ink)",
+            borderRadius: 20, boxShadow: "var(--sh-md)",
+            padding: "30px 24px 24px", maxWidth: 320, width: "100%",
+            textAlign: "center", direction: "rtl",
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 10 }}>🎉</div>
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
+              הגעת ליעד!
+            </div>
+            <div style={{ fontSize: 14, color: "var(--muted)", fontWeight: 600, marginBottom: 22 }}>
+              {navDest.title}
+            </div>
+            <button onClick={endNavigation} style={{
+              width: "100%", height: 50,
+              background: "var(--primary)", color: "var(--ink)",
+              border: "2px solid var(--ink)", borderRadius: "var(--r-md)",
+              fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 16,
+              cursor: "pointer", boxShadow: "var(--sh-md)",
+            }}>סיימתי</button>
+          </div>
+        </div>
+      )}
+
       {/* ── TOP BAR ── */}
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0,
@@ -563,11 +617,7 @@ function MapPageInner() {
               </div>
               {/* Cancel button */}
               <button
-                onClick={() => {
-                  setNavDest(null); setNavRoute(null); setNavInfo(null);
-                  setNavSteps([]); setCurrentStepIdx(0);
-                  router.replace("/map");
-                }}
+                onClick={endNavigation}
                 style={{
                   padding: "8px 14px", borderRadius: 10, flexShrink: 0,
                   background: "rgba(255,255,255,0.12)",
