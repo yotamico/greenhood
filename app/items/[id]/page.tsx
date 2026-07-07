@@ -23,6 +23,15 @@ interface Item {
   lat: number | null; lng: number | null;
   moderation_status: "pending" | "approved" | "rejected";
   moderation_reason: string | null;
+  taken_at: string | null; pending_taken_by: string | null;
+}
+
+const APPEAL_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+function getGpsPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000, enableHighAccuracy: true });
+  });
 }
 interface Image { url: string; position: number; is_primary: boolean; }
 interface Reporter { name: string | null; avatar_color: string | null; xp: number; }
@@ -54,6 +63,10 @@ export default function ItemDetailPage() {
   const [itemStatus,   setItemStatus]   = useState<"active"|"taken"|"removed">("active");
   const [deleting,     setDeleting]     = useState(false);
   const [lightboxUrl,  setLightboxUrl]  = useState<string | null>(null);
+  const [requestingClose, setRequestingClose] = useState(false);
+  const [confirming,      setConfirming]      = useState(false);
+  const [disputeSent,     setDisputeSent]      = useState(false);
+  const [disputing,       setDisputing]        = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -148,6 +161,66 @@ export default function ItemDetailPage() {
     setItem(prev => prev ? { ...prev, status: s } : prev);
   }
 
+  async function requestClose() {
+    if (!userId || requestingClose) return;
+    setRequestingClose(true);
+    try {
+      const pos = await getGpsPosition();
+      const res = await fetch(`/api/items/${id}/request-close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error ?? "שגיאה בשליחת הדיווח"); return; }
+      setItem(prev => prev ? { ...prev, pending_taken_by: userId } : prev);
+      alert("הדיווח נשלח! הבעלים יקבל התראה לאישור המסירה.");
+    } catch {
+      alert("לא הצלחנו לאתר את המיקום שלך — ודא שהרשאת המיקום פעילה.");
+    } finally {
+      setRequestingClose(false);
+    }
+  }
+
+  async function respondToRequest(approve: boolean) {
+    if (!userId || confirming) return;
+    setConfirming(true);
+    try {
+      const res = await fetch(`/api/items/${id}/confirm-taken`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, approve }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error ?? "שגיאה"); return; }
+      setItem(prev => prev ? { ...prev, pending_taken_by: null, status: approve ? "taken" : "active", taken_at: approve ? new Date().toISOString() : null } : prev);
+      setItemStatus(approve ? "taken" : "active");
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  async function disputeItem() {
+    if (!userId || disputing) return;
+    setDisputing(true);
+    try {
+      const res = await fetch(`/api/items/${id}/dispute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      if (!data.ok) { alert(data.error ?? "שגיאה"); return; }
+      setDisputeSent(true);
+      if (data.reopened) {
+        setItem(prev => prev ? { ...prev, status: "active", taken_at: null } : prev);
+        setItemStatus("active");
+      }
+    } finally {
+      setDisputing(false);
+    }
+  }
+
   async function deleteItem() {
     if (!confirm("למחוק את הפריט לצמיתות?")) return;
     setDeleting(true);
@@ -180,6 +253,9 @@ export default function ItemDetailPage() {
   const urgent    = item.pickup_day === today || item.pickup_day === tomorrow;
   const taken     = itemStatus === "taken";
   const removed   = itemStatus === "removed";
+  const isFlexible = item.pickup_day === null;
+  const hasPendingRequest = !!item.pending_taken_by;
+  const withinAppealWindow = taken && !!item.taken_at && (Date.now() - new Date(item.taken_at).getTime() < APPEAL_WINDOW_MS);
   const primaryImg = activeImg ?? images.find(i => i.is_primary) ?? images[0];
   const initials  = (reporter?.name || "?").charAt(0).toUpperCase();
 
@@ -400,6 +476,74 @@ export default function ItemDetailPage() {
                   fontWeight:700, fontSize:12, cursor:"pointer",
                 }}
               >ערוך ושלח מחדש</button>
+            )}
+          </div>
+        )}
+
+        {/* Owner: pending community closure confirmation */}
+        {isOwner && hasPendingRequest && (
+          <div style={{
+            marginBottom:14, padding:"12px 14px",
+            background:"var(--primary-tint)", border:"2px solid var(--primary)",
+            borderRadius:12, display:"flex", flexDirection:"column", gap:10,
+          }}>
+            <div style={{ fontWeight:800, fontSize:13, color:"var(--ink)" }}>
+              🌿 מישהו דיווח שהפריט נלקח — מאשר את המסירה?
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button disabled={confirming} onClick={() => respondToRequest(true)} style={{
+                flex:1, padding:"8px 0", borderRadius:999, background:"var(--ink)", color:"var(--paper)",
+                border:"none", fontFamily:"var(--font-sans)", fontWeight:700, fontSize:13,
+                cursor: confirming ? "not-allowed" : "pointer", opacity: confirming ? 0.6 : 1,
+              }}>✓ מאשר, נלקח</button>
+              <button disabled={confirming} onClick={() => respondToRequest(false)} style={{
+                flex:1, padding:"8px 0", borderRadius:999, background:"var(--surface)", color:"var(--ink)",
+                border:"1.5px solid var(--ink)", fontFamily:"var(--font-sans)", fontWeight:700, fontSize:13,
+                cursor: confirming ? "not-allowed" : "pointer", opacity: confirming ? 0.6 : 1,
+              }}>עדיין לא נלקח</button>
+            </div>
+          </div>
+        )}
+
+        {/* Any viewer: appeal window — dispute a recent closure */}
+        {withinAppealWindow && !disputeSent && (
+          <div style={{
+            marginBottom:14, padding:"12px 14px",
+            background:"var(--warning-tint)", border:"2px solid var(--warning)",
+            borderRadius:12, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10,
+          }}>
+            <div style={{ fontWeight:700, fontSize:13, color:"var(--ink)" }}>הפריט סומן כנלקח — עדיין שם?</div>
+            <button disabled={disputing} onClick={disputeItem} style={{
+              flexShrink:0, padding:"7px 14px", borderRadius:999, background:"var(--ink)", color:"var(--paper)",
+              border:"none", fontFamily:"var(--font-sans)", fontWeight:700, fontSize:12,
+              cursor: disputing ? "not-allowed" : "pointer", opacity: disputing ? 0.6 : 1,
+            }}>דווח</button>
+          </div>
+        )}
+        {withinAppealWindow && disputeSent && (
+          <div style={{ marginBottom:14, fontSize:12, color:"var(--muted)", fontWeight:600 }}>
+            תודה, הדיווח נקלט.
+          </div>
+        )}
+
+        {/* Non-owner: request community closure (flexible items only) */}
+        {!isOwner && isFlexible && !taken && !removed && (
+          <div style={{
+            marginBottom:14, padding:"12px 14px",
+            background:"var(--surface)", border:"2px solid var(--ink)",
+            borderRadius:12, display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, boxShadow:"var(--sh-sm)",
+          }}>
+            {hasPendingRequest ? (
+              <div style={{ fontSize:13, fontWeight:700, color:"var(--muted)" }}>⏳ ממתין לאישור הבעלים</div>
+            ) : (
+              <>
+                <div style={{ fontSize:13, fontWeight:700 }}>הפריט כבר לא שם?</div>
+                <button disabled={requestingClose} onClick={requestClose} style={{
+                  flexShrink:0, padding:"7px 14px", borderRadius:999, background:"var(--primary)", color:"var(--ink)",
+                  border:"2px solid var(--ink)", fontFamily:"var(--font-sans)", fontWeight:700, fontSize:12,
+                  cursor: requestingClose ? "not-allowed" : "pointer", opacity: requestingClose ? 0.6 : 1,
+                }}>{requestingClose ? "מאתר מיקום…" : "דווח כנלקח"}</button>
+              </>
             )}
           </div>
         )}

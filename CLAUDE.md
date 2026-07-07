@@ -33,6 +33,10 @@ Your job:
 - app/api/streets/            — bounding-box street fetch via Overpass, edge-cached 24h
 - app/api/broadcast-push/     — push notification to nearby users when a new item is reported
 - app/api/send-push/          — push notification to the other chat participant on a new message
+- app/api/items/[id]/request-close/ — non-owner "דווח כנלקח" on a flexible item: server-side GPS check (≤100m) + H3 rate limit, creates a pending confirmation and pushes the owner
+- app/api/items/[id]/confirm-taken/ — owner approves/denies a pending community closure request
+- app/api/items/[id]/dispute/       — "still there?" vote during the 3h post-closure appeal window; 2 votes reopen the item
+- app/api/cron/pending-reminders/   — hourly Vercel Cron; pushes the owner once if a pending closure request has waited 24h unanswered
 - components/Map/GHMapLibre.tsx    — the map component actually used by app/map/page.tsx
 - components/NotificationsPopup.tsx — push notification opt-in prompt
 - components/ui/TabBar.tsx         — bottom tab bar + push subscription registration
@@ -41,7 +45,9 @@ Your job:
 Only one map implementation and one report form exist now — if you ever see a second one, it's a stray duplicate left over from a rewrite; delete it, don't maintain both.
 
 ## Data model (live in Supabase, not version-controlled as SQL)
-- `items` — reporter_id, title, category, condition, tags, address, lat/lng, pickup_day, status (active/taken/removed), moderation_status (pending/approved/rejected), moderation_reason
+- `items` — reporter_id, title, category, condition, tags, address, lat/lng, pickup_day, status (active/taken/removed), moderation_status (pending/approved/rejected), moderation_reason, taken_at, closed_by (who ultimately closed it — may differ from reporter_id), pending_taken_by/pending_taken_at/pending_reminder_sent_at (community closure request awaiting owner confirmation — see `supabase_items_close_flow.sql`)
+- `item_close_requests` — append-only log of every valid "דווח כנלקח" attempt (item_id, user_id, lat, lng, created_at); source of truth for the per-user/H3-bucket rate limit, survives deny/reset
+- `item_dispute_reports` — "still there?" votes during the 3h post-closure appeal window (item_id, user_id, unique per pair); 2 votes reopen the item and clear the rows
 - `item_images` — item_id, url, position, is_primary
 - `profiles` — id, name, avatar_color, personas, xp, onboarded
 - `messages`, `message_reads` — chat
@@ -56,6 +62,13 @@ New items land as `moderation_status: pending` and only show on the map/feed onc
 - `lib/supabase.ts` patches `Headers.set/append` and wraps `fetch` to strip non-Latin-1 characters — Android Chrome throws on Hebrew text in HTTP headers otherwise. Don't remove this.
 - `/api/broadcast-push` and `/api/send-push` require `SUPABASE_SERVICE_ROLE_KEY` to read other users' `push_subscriptions` past RLS — they now fail loudly (500) if it's missing instead of silently sending to 0 recipients. Make sure it's set in both `.env.local` and Vercel env vars.
 - Geocoding always goes through `/api/geocode` (reverse) and `/api/geocode/search` (forward) — never call Nominatim directly from client code, to keep the User-Agent header and rate-limit-friendly behavior in one place.
+
+## Item closure rules
+- The owner can always mark their own item "taken" instantly (`updateStatus` in `app/items/[id]/page.tsx`) — no GPS check, works for both urgent and flexible items. This is unchanged legacy behavior.
+- Urgent items (`pickup_day` set) can only close this way, or auto-expire: `app/map/page.tsx` and `app/feed/page.tsx` filter out `status==='active'` items whose `pickup_day` is in the past — no cron, purely computed at query time. There is no third-party "request close" path for urgent items.
+- Flexible items (`pickup_day === null`) can additionally be closed by any *other* GPS-verified (≤100m) nearby user via `/api/items/[id]/request-close`, but this only creates a pending request — the owner must approve via `/api/items/[id]/confirm-taken` before `status` actually flips to `taken`. Unanswered requests get one reminder push after 24h (`/api/cron/pending-reminders`).
+- Any closure (owner-direct or community-confirmed) opens a 3h dispute/appeal window (`/api/items/[id]/dispute`) — 2 "still there?" votes reopen the item. `app/map/page.tsx`/`app/feed/page.tsx` keep showing `status==='taken'` items during this window (dimmed pin / "⏳ סומן כנלקח" pill) so nearby users can actually see and dispute them.
+- Rate limiting on the community request path: max 3 `/api/items/[id]/request-close` calls per user per hour within the same H3 (resolution 7) cell — see `lib/geoClose.ts`.
 
 ## Collection schedule
 - Lives entirely in the `street_schedules` Supabase table (see Data model above) — not in code. 242 streets for Nes Ziona today; the `city` column exists so other cities can be added as rows without a code change.

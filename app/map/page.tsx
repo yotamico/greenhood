@@ -44,7 +44,16 @@ interface Item {
   lat: number | null;
   lng: number | null;
   pickup_day: string | null;
+  taken_at: string | null;
   item_images: { url: string; is_primary: boolean; position: number }[];
+}
+
+const APPEAL_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+function isDisplayEligible(it: Pick<Item, "status" | "pickup_day" | "taken_at">, todayStr: string): boolean {
+  if (it.status === "active") return it.pickup_day === null || it.pickup_day >= todayStr;
+  if (it.status === "taken")  return !!it.taken_at && Date.now() - new Date(it.taken_at).getTime() < APPEAL_WINDOW_MS;
+  return false;
 }
 
 function dayLabel(dateStr: string): string {
@@ -386,13 +395,15 @@ function MapPageInner() {
     if (!authed) return;
     supabase
       .from("items")
-      .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day,item_images(url,is_primary,position)")
-      .eq("status", "active")
+      .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day,taken_at,item_images(url,is_primary,position)")
+      .in("status", ["active", "taken"])
       .eq("moderation_status", "approved")
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data, error }) => {
-        if (!error) setItems((data as Item[]) ?? []);
+        if (error) return;
+        const todayStr = new Date().toISOString().split("T")[0];
+        setItems(((data as Item[]) ?? []).filter(it => isDisplayEligible(it, todayStr)));
       });
   }, [authed]);
 
@@ -1059,6 +1070,7 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
   const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split("T")[0];
   const isUrgent    = item.pickup_day === todayStr || item.pickup_day === tomorrowStr;
   const urgentText  = item.pickup_day === todayStr ? "🔥 פינוי היום" : "🔥 פינוי מחר";
+  const isTaken     = item.status === "taken";
 
   useEffect(() => {
     if (!isExpanded) { setImgIdx(0); setDrag(0); dragStartRef.current = null; return; }
@@ -1205,8 +1217,16 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
             >✕</button>
           </div>
 
-          {/* urgent pill */}
-          {isUrgent && (
+          {/* urgent / taken pill */}
+          {isTaken ? (
+            <div style={{ position: "absolute", top: 10, right: 10, zIndex: 3 }}>
+              <span style={{
+                background: "var(--paper-2)", color: "var(--muted)",
+                border: "1.5px solid var(--ink)", borderRadius: 999,
+                fontSize: 11, fontWeight: 700, padding: "5px 10px",
+              }}>⏳ סומן כנלקח</span>
+            </div>
+          ) : isUrgent && (
             <div style={{ position: "absolute", top: 10, right: 10, zIndex: 3 }}>
               <span style={{
                 background: "var(--accent-tint)", color: "var(--accent-dark)",
@@ -1337,7 +1357,13 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
             background: "var(--paper-2)", border: "1.5px solid var(--ink)",
             fontSize: 11, fontWeight: 700,
           }}>{item.condition}</span>
-          {isUrgent && (
+          {isTaken ? (
+            <span style={{
+              padding: "2px 8px", borderRadius: 999,
+              background: "var(--paper-2)", border: "1.5px solid var(--ink)",
+              fontSize: 11, fontWeight: 700, color: "var(--muted)",
+            }}>⏳ סומן כנלקח</span>
+          ) : isUrgent && (
             <span style={{
               padding: "2px 8px", borderRadius: 999,
               background: "var(--accent-tint)", border: "1.5px solid var(--accent)",

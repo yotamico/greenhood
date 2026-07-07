@@ -27,11 +27,11 @@ const CAT_PIN: Record<string, { emoji: string; bg: string }> = {
   kids:        { emoji: "🧸", bg: "#F0D5CB" },
 };
 
-function makePinEl(emoji: string, bg: string, imageUrl?: string | null): HTMLElement {
+function makePinEl(emoji: string, bg: string, imageUrl?: string | null, dimmed?: boolean): HTMLElement {
   const S = 44;
   // MapLibre overwrites style.transform on the element it receives — keep the wrapper clean
   const wrapper = document.createElement("div");
-  wrapper.style.cssText = `width:${S}px;height:${S}px;cursor:pointer;`;
+  wrapper.style.cssText = `width:${S}px;height:${S}px;cursor:pointer;${dimmed ? "opacity:0.45;" : ""}`;
 
   const inner = document.createElement("div");
   inner.style.cssText = `width:${S}px;height:${S}px;background:${bg};border:2.5px solid #2D2A24;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:2px 2px 0 rgba(45,42,36,0.18);display:flex;align-items:center;justify-content:center;overflow:hidden;`;
@@ -64,7 +64,7 @@ function toLineGeoJSON(coords: [number, number][]) {
 }
 
 interface Item {
-  id: string; title: string; category: string;
+  id: string; title: string; category: string; status?: string;
   lat: number | null; lng: number | null;
   imageUrl?: string | null;
 }
@@ -98,6 +98,7 @@ export default function GHMapLibre({
   const userMarkerRef      = useRef<maplibregl.Marker | null>(null);
   const destMarkerRef      = useRef<maplibregl.Marker | null>(null);
   const itemMarkersRef     = useRef<Map<string, maplibregl.Marker>>(new Map());
+  const itemStatusRef      = useRef<Map<string, string>>(new Map());
   const prevTriggerRef     = useRef(0);
 
   /* ── init ── */
@@ -222,20 +223,28 @@ export default function GHMapLibre({
     const existing = itemMarkersRef.current;
     const newIds = new Set(items.map(it => it.id));
 
-    existing.forEach((m, id) => { if (!newIds.has(id)) { m.remove(); existing.delete(id); } });
+    existing.forEach((m, id) => { if (!newIds.has(id)) { m.remove(); existing.delete(id); itemStatusRef.current.delete(id); } });
 
-    if (navMode) { existing.forEach(m => m.remove()); existing.clear(); return; }
+    if (navMode) { existing.forEach(m => m.remove()); existing.clear(); itemStatusRef.current.clear(); return; }
 
     items
-      .filter(it => it.lat != null && it.lng != null && !existing.has(it.id))
+      .filter(it => it.lat != null && it.lng != null)
       .forEach(it => {
+        // status changed (e.g. active → taken) — recreate the pin with the updated look
+        if (existing.has(it.id) && itemStatusRef.current.get(it.id) !== it.status) {
+          existing.get(it.id)!.remove();
+          existing.delete(it.id);
+        }
+        if (existing.has(it.id)) return;
+
         const pin = CAT_PIN[it.category] ?? { emoji: "📦", bg: "#EDE6D2" };
-        const el = makePinEl(pin.emoji, pin.bg, it.imageUrl);
+        const el = makePinEl(pin.emoji, pin.bg, it.imageUrl, it.status === "taken");
         if (onItemClick) el.addEventListener("click", () => onItemClick(it.id));
         existing.set(it.id,
           new maplibregl.Marker({ element: el, anchor: "bottom", offset: [0, -9], pitchAlignment: "viewport", rotationAlignment: "viewport" })
             .setLngLat([it.lng!, it.lat!]).addTo(map)
         );
+        itemStatusRef.current.set(it.id, it.status ?? "active");
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, navMode]);

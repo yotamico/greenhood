@@ -29,10 +29,18 @@ const FILTERS = [
 interface Item {
   id:string; title:string; category:string; condition:string;
   address:string; created_at:string; pickup_day:string|null;
+  status:string; taken_at:string|null;
   item_images: { url:string; is_primary:boolean }[];
 }
 
 const HEBREW_DAYS = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+const APPEAL_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+function isDisplayEligible(it: Pick<Item, "status" | "pickup_day" | "taken_at">, todayStr: string): boolean {
+  if (it.status === "active") return it.pickup_day === null || it.pickup_day >= todayStr;
+  if (it.status === "taken")  return !!it.taken_at && Date.now() - new Date(it.taken_at).getTime() < APPEAL_WINDOW_MS;
+  return false;
+}
 
 export default function FeedPage() {
   const router  = useRouter();
@@ -66,12 +74,15 @@ export default function FeedPage() {
   useEffect(() => {
     if (!authed) return;
     supabase.from("items")
-      .select("id,title,category,condition,address,created_at,pickup_day,item_images(url,is_primary)")
-      .eq("status","active")
+      .select("id,title,category,condition,address,created_at,pickup_day,status,taken_at,item_images(url,is_primary)")
+      .in("status",["active","taken"])
       .eq("moderation_status","approved")
       .order("created_at",{ascending:false})
       .limit(60)
-      .then(({ data }) => setItems((data as Item[]) ?? []));
+      .then(({ data }) => {
+        const todayStr = new Date().toISOString().split("T")[0];
+        setItems(((data as Item[]) ?? []).filter(it => isDisplayEligible(it, todayStr)));
+      });
   }, [authed]);
 
   const today = new Date().toISOString().split("T")[0];
@@ -205,6 +216,7 @@ function MasonryCard({ item, saved, onSave, onPress, today, tomorrow, tomorrowSt
   const emoji    = CAT_EMOJI[item.category] ?? "📦";
   const color    = CAT_COLOR[item.category] ?? "var(--paper-2)";
   const urgent   = item.pickup_day === today || item.pickup_day === tomorrow;
+  const isTaken  = item.status === "taken";
   const norm     = (s:string) => s.replace(/['"״"]/g,"");
   const clearanceTomorrow = tomorrowStreets.size > 0 &&
     [...tomorrowStreets].some(st => norm(item.address).includes(norm(st)));
@@ -233,7 +245,15 @@ function MasonryCard({ item, saved, onSave, onPress, today, tomorrow, tomorrowSt
           // eslint-disable-next-line @next/next/no-img-element
           <img src={photoUrl} alt={item.title} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} />
         ) : emoji}
-        {(clearanceTomorrow || urgent) && (
+        {isTaken ? (
+          <div style={{
+            position:"absolute", top:8, right:8,
+            padding:"2px 8px", borderRadius:999,
+            background:"var(--paper-2)", color:"var(--muted)",
+            border:"1.5px solid var(--ink)",
+            fontSize:10, fontWeight:800,
+          }}>⏳ נלקח</div>
+        ) : (clearanceTomorrow || urgent) && (
           <div style={{
             position:"absolute", top:8, right:8,
             padding:"2px 8px", borderRadius:999,
