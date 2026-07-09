@@ -137,6 +137,14 @@ function maneuverText(step: OsrmStep | null): string {
   return step.name ? `${base}, אל ${step.name}` : base;
 }
 
+/* circular exponential smoothing — prevents the camera from snapping when a single
+   noisy GPS-derived heading estimate swings far from the recent trend */
+function smoothHeading(prev: number | null, next: number): number {
+  if (prev == null) return next;
+  const diff = ((next - prev + 540) % 360) - 180; // shortest signed delta, range [-180,180]
+  return (prev + diff * 0.3 + 360) % 360;
+}
+
 function speak(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window) || !text) return;
   window.speechSynthesis.cancel();
@@ -278,6 +286,8 @@ function MapPageInner() {
   const [voiceEnabled,   setVoiceEnabled]   = useState(false);
   const [gpsError,       setGpsError]       = useState<string | null>(null);
   const prevPosRef = useRef<[number,number] | null>(null);
+  const smoothedHeadingRef = useRef<number | null>(null);
+  const headingAnchorRef = useRef<[number,number] | null>(null);
   const arrivedRef = useRef(false);
   /* dedup ref — tracks which destination we already fetched a route for */
   const routeDestRef = useRef<string | null>(null);
@@ -374,11 +384,23 @@ function MapPageInner() {
           || Math.abs(newPos[1] - prev[1]) > MIN_DELTA;
         if (moved) setUserPos(newPos);
         if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
-          setHeading(pos.coords.heading);
-        } else if (prev && moved) {
-          const dx = newPos[1] - prev[1], dy = newPos[0] - prev[0];
-          if (Math.abs(dx) > 0.000005 || Math.abs(dy) > 0.000005) {
-            setHeading((Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360);
+          const sm = smoothHeading(smoothedHeadingRef.current, pos.coords.heading);
+          smoothedHeadingRef.current = sm;
+          setHeading(sm);
+        } else if (moved) {
+          /* device gives no compass heading (common on foot) — derive bearing from
+             movement, but only over a ~15m baseline so GPS wobble doesn't dominate
+             the angle, then smooth on top so a single bad fix can't snap the camera */
+          const anchor = headingAnchorRef.current;
+          if (!anchor) {
+            headingAnchorRef.current = newPos;
+          } else if (haversine(anchor, newPos) >= 15) {
+            const dx = newPos[1] - anchor[1], dy = newPos[0] - anchor[0];
+            const raw = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+            const sm = smoothHeading(smoothedHeadingRef.current, raw);
+            smoothedHeadingRef.current = sm;
+            setHeading(sm);
+            headingAnchorRef.current = newPos;
           }
         }
         prevPosRef.current = newPos;

@@ -149,22 +149,26 @@ export default function GHMapLibre({
     };
   }, []); // eslint-disable-line
 
-  /* ── nav mode: follow user with heading ── */
+  /* ── nav mode: follow user with heading ──
+     Look-ahead is kept modest (60m, was 150m) because any residual noise in the heading
+     estimate gets amplified by this distance into a screen-space camera jump; duration
+     is stretched closer to the GPS update cadence so consecutive eases blend into a
+     continuous glide instead of a series of short jerky cuts. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !navMode || !userPos) return;
     let [lat, lng] = userPos;
     if (heading != null) {
       const rad = heading * Math.PI / 180;
-      lat += (150 / 111320) * Math.cos(rad);
-      lng += (150 / (111320 * Math.cos(userPos[0] * Math.PI / 180))) * Math.sin(rad);
+      lat += (60 / 111320) * Math.cos(rad);
+      lng += (60 / (111320 * Math.cos(userPos[0] * Math.PI / 180))) * Math.sin(rad);
     }
     map.easeTo({
       center: [lng, lat],
       zoom: 17,
       pitch: 50,
       bearing: -(heading ?? 0),
-      duration: 150,
+      duration: 600,
     });
   }, [userPos, heading, navMode, mapLoaded]);
 
