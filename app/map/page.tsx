@@ -96,6 +96,56 @@ function haversine([lat1, lng1]: [number,number], [lat2, lng2]: [number,number])
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/* local flat-earth projection (metres) — good enough for short off-route distance checks */
+function projectMeters(base: [number,number], p: [number,number]): [number,number] {
+  const metersPerDegLat = 111320;
+  const metersPerDegLng = 111320 * Math.cos(base[0] * Math.PI / 180);
+  return [(p[1] - base[1]) * metersPerDegLng, (p[0] - base[0]) * metersPerDegLat];
+}
+
+function pointToSegmentMeters(p: [number,number], a: [number,number], b: [number,number]): number {
+  const P = projectMeters(a, p);
+  const B = projectMeters(a, b);
+  const lenSq = B[0]*B[0] + B[1]*B[1];
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, (P[0]*B[0] + P[1]*B[1]) / lenSq));
+  const dx = P[0] - t*B[0], dy = P[1] - t*B[1];
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+/* min distance (metres) from a point to a polyline — used for off-route detection */
+function minDistanceToRouteMeters(p: [number,number], route: [number,number][]): number {
+  if (route.length === 0) return Infinity;
+  if (route.length === 1) return haversine(p, route[0]);
+  let min = Infinity;
+  for (let i = 0; i < route.length - 1; i++) {
+    const d = pointToSegmentMeters(p, route[i], route[i+1]);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+const MANEUVER_HE: Record<string,string> = {
+  "left": "פנה שמאלה", "slight left": "פנה מעט שמאלה", "sharp left": "פנה חדות שמאלה",
+  "right": "פנה ימינה", "slight right": "פנה מעט ימינה", "sharp right": "פנה חדות ימינה",
+  "uturn": "בצע פניית פרסה", "straight": "המשך ישר",
+};
+
+function maneuverText(step: OsrmStep | null): string {
+  if (!step) return "";
+  if (step.maneuver.type === "arrive") return "הגעת ליעד";
+  const base = MANEUVER_HE[step.maneuver.modifier ?? ""] ?? "המשך ישר";
+  return step.name ? `${base}, אל ${step.name}` : base;
+}
+
+function speak(text: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window) || !text) return;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = "he-IL";
+  utter.rate = 1;
+  window.speechSynthesis.speak(utter);
+}
+
 function TurnArrow({ type, modifier }: { type?: string; modifier?: string }) {
   if (type === "arrive") return <span style={{ fontSize: 32, lineHeight: 1 }}>🎯</span>;
   const deg: Record<string, number> = {
@@ -223,16 +273,26 @@ function MapPageInner() {
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [heading,        setHeading]        = useState<number | null>(null);
   const [showArrivedPopup, setShowArrivedPopup] = useState(false);
+  const [routeError,     setRouteError]     = useState<string | null>(null);
+  const [rerouting,      setRerouting]      = useState(false);
+  const [voiceEnabled,   setVoiceEnabled]   = useState(false);
+  const [gpsError,       setGpsError]       = useState<string | null>(null);
   const prevPosRef = useRef<[number,number] | null>(null);
   const arrivedRef = useRef(false);
   /* dedup ref — tracks which destination we already fetched a route for */
   const routeDestRef = useRef<string | null>(null);
+  const lastRerouteAtRef = useRef(0);
+  const fetchAbortRef = useRef<AbortController | null>(null);
+  const announcedRef = useRef<{ stepIdx: number; far: boolean; near: boolean }>({ stepIdx: -1, far: false, near: false });
   navDestRef.current = navDest;
 
   const endNavigation = useCallback(() => {
+    fetchAbortRef.current?.abort();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
     setNavDest(null); setNavRoute(null); setNavInfo(null);
     setNavSteps([]); setCurrentStepIdx(0);
     setShowArrivedPopup(false); arrivedRef.current = false;
+    setRouteError(null); setRerouting(false);
     router.replace("/map");
   }, [router]);
 
@@ -298,10 +358,15 @@ function MapPageInner() {
   /* geolocation — watch position for live navigation.
      Throttle: skip state update if moved less than 8m (prevents re-renders while stationary). */
   useEffect(() => {
-    if (!navigator.geolocation) { setUserPos([31.9297, 34.8307]); return; }
+    if (!navigator.geolocation) {
+      setGpsError("הדפדפן הזה לא תומך באיתור מיקום — הניווט יעבוד ממיקום ברירת מחדל");
+      setUserPos([31.9297, 34.8307]);
+      return;
+    }
     const MIN_DELTA = 8 / 111320; // ~8 metres in degrees
     const id = navigator.geolocation.watchPosition(
       pos => {
+        setGpsError(null);
         const newPos: [number,number] = [pos.coords.latitude, pos.coords.longitude];
         const prev = prevPosRef.current;
         const moved = !prev
@@ -318,8 +383,15 @@ function MapPageInner() {
         }
         prevPosRef.current = newPos;
       },
-      () => setUserPos([31.9297, 34.8307]),
-      { enableHighAccuracy: true, maximumAge: 3000 },
+      (err) => {
+        setGpsError(
+          err.code === err.PERMISSION_DENIED
+            ? "לא הצלחנו לאתר את המיקום שלך — יש לאשר הרשאת מיקום בדפדפן. מוצג מיקום ברירת מחדל"
+            : "תקלה זמנית באיתור המיקום — הניווט עשוי להיות לא מדויק"
+        );
+        setUserPos(prev => prev ?? [31.9297, 34.8307]);
+      },
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 },
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
@@ -335,6 +407,8 @@ function MapPageInner() {
       setNavInfo(null);
       setNavSteps([]);
       setCurrentStepIdx(0);
+      setRouteError(null);
+      setRerouting(false);
       setNavDest({ lat: parseFloat(lat), lng: parseFloat(lng), title });
       setSheetPct(HIDDEN);
       setShowArrivedPopup(false);
@@ -346,6 +420,8 @@ function MapPageInner() {
       setNavInfo(null);
       setNavSteps([]);
       setCurrentStepIdx(0);
+      setRouteError(null);
+      setRerouting(false);
       setShowArrivedPopup(false);
       arrivedRef.current = false;
     }
@@ -357,27 +433,35 @@ function MapPageInner() {
     if (haversine(userPos, [navDest.lat, navDest.lng]) <= 20) {
       arrivedRef.current = true;
       setShowArrivedPopup(true);
+      if (voiceEnabled) speak("הגעת ליעד");
     }
-  }, [userPos, navDest]);
+  }, [userPos, navDest, voiceEnabled]);
 
-  /* fetch OSRM route — re-runs when either navDest OR userPos changes.
-     The dedup ref prevents re-fetching on every GPS position update. */
-  useEffect(() => {
-    if (!navDest || !userPos) return;
-    const key = `${navDest.lat.toFixed(5)},${navDest.lng.toFixed(5)}`;
-    if (routeDestRef.current === key) return; // already fetched for this dest
-    routeDestRef.current = key;
-
-    const [uLat, uLng] = userPos;
+  /* fetches (or re-fetches) the OSRM route from `origin` to `dest`.
+     `isReroute` just controls the "מנתב מחדש…" indicator vs. the initial "מחשב מסלול…" one. */
+  const fetchRoute = useCallback((origin: [number,number], dest: NavDest, isReroute: boolean) => {
+    fetchAbortRef.current?.abort();
     const controller = new AbortController();
+    fetchAbortRef.current = controller;
+    routeDestRef.current = `${dest.lat.toFixed(5)},${dest.lng.toFixed(5)}`;
+    setRouteError(null);
+    if (isReroute) setRerouting(true);
+    const [oLat, oLng] = origin;
     fetch(
-      `https://router.project-osrm.org/route/v1/driving/${uLng},${uLat};${navDest.lng},${navDest.lat}?overview=full&geometries=geojson&steps=true`,
+      `https://router.project-osrm.org/route/v1/driving/${oLng},${oLat};${dest.lng},${dest.lat}?overview=full&geometries=geojson&steps=true`,
       { signal: controller.signal }
     )
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`osrm http ${r.status}`);
+        return r.json();
+      })
       .then(d => {
         const route = d.routes?.[0];
-        if (!route) return;
+        if (!route) {
+          routeDestRef.current = null;
+          setRouteError("לא נמצא מסלול ליעד הזה");
+          return;
+        }
         const coords: [number,number][] = route.geometry.coordinates.map(
           ([lng, lat]: [number, number]) => [lat, lng] as [number, number]
         );
@@ -389,10 +473,42 @@ function MapPageInner() {
         setCurrentStepIdx(firstReal > 0 ? firstReal : 0);
       })
       .catch(err => {
-        if (err.name !== "AbortError") routeDestRef.current = null; // allow retry on real error
-      });
-    return () => controller.abort();
-  }, [navDest, userPos]);
+        if (err.name === "AbortError") return;
+        routeDestRef.current = null;
+        setRouteError("לא הצלחנו לחשב מסלול. בדוק/י את החיבור לאינטרנט ונסה/י שוב");
+      })
+      .finally(() => setRerouting(false));
+  }, []);
+
+  /* initial route fetch (when destination is set/changed), plus off-route detection
+     that triggers a live reroute — only when the user actually strays from the path
+     (not on every GPS tick), with a cooldown so we don't hammer the OSRM demo server. */
+  const OFF_ROUTE_METERS = 40;
+  const REROUTE_COOLDOWN_MS = 8000;
+  useEffect(() => {
+    if (!navDest || !userPos) return;
+    const key = `${navDest.lat.toFixed(5)},${navDest.lng.toFixed(5)}`;
+    if (routeDestRef.current !== key) {
+      fetchRoute(userPos, navDest, false);
+      return;
+    }
+    if (navRoute && navRoute.length > 1) {
+      const now = Date.now();
+      if (
+        minDistanceToRouteMeters(userPos, navRoute) > OFF_ROUTE_METERS &&
+        now - lastRerouteAtRef.current > REROUTE_COOLDOWN_MS
+      ) {
+        lastRerouteAtRef.current = now;
+        fetchRoute(userPos, navDest, true);
+      }
+    }
+  }, [navDest, userPos, navRoute, fetchRoute]);
+
+  const retryRoute = useCallback(() => {
+    if (!navDest || !userPos) return;
+    lastRerouteAtRef.current = Date.now();
+    fetchRoute(userPos, navDest, false);
+  }, [navDest, userPos, fetchRoute]);
 
   /* advance nav step when user reaches the maneuver point */
   useEffect(() => {
@@ -411,6 +527,23 @@ function MapPageInner() {
     const stepPos: [number,number] = [currentStep.maneuver.location[1], currentStep.maneuver.location[0]];
     return haversine(userPos, stepPos);
   }, [userPos, currentStep]);
+
+  /* opt-in voice guidance — announces each maneuver once ~150m ahead, and again on approach */
+  useEffect(() => {
+    if (!voiceEnabled || !currentStep) return;
+    if (announcedRef.current.stepIdx !== currentStepIdx) {
+      announcedRef.current = { stepIdx: currentStepIdx, far: false, near: false };
+    }
+    const a = announcedRef.current;
+    if (!a.far && distToStep <= 150) {
+      a.far = true;
+      const roundedDist = Math.round(distToStep / 10) * 10;
+      speak(roundedDist > 30 ? `בעוד ${roundedDist} מטר, ${maneuverText(currentStep)}` : maneuverText(currentStep));
+    } else if (!a.near && distToStep <= 30) {
+      a.near = true;
+      speak(maneuverText(currentStep));
+    }
+  }, [distToStep, currentStepIdx, currentStep, voiceEnabled]);
 
   /* fetch items */
   useEffect(() => {
@@ -491,6 +624,8 @@ function MapPageInner() {
     setNavInfo(null);
     setNavSteps([]);
     setCurrentStepIdx(0);
+    setRouteError(null);
+    setRerouting(false);
     setNavDest({ lat, lng, title });
     setSheetPct(HIDDEN);
   }, []);
@@ -536,6 +671,28 @@ function MapPageInner() {
           heading={heading}
         />
       </div>
+
+      {/* ── GPS error toast ── */}
+      {gpsError && (
+        <div style={{
+          position: "fixed", top: 10, left: "50%", transform: "translateX(-50%)",
+          zIndex: 300, maxWidth: "92%",
+          background: "#8B3A3A", color: "white",
+          border: "2px solid var(--ink)", borderRadius: 12,
+          boxShadow: "var(--sh-md)", padding: "8px 12px 8px 8px",
+          display: "flex", alignItems: "center", gap: 8,
+          fontSize: 13, fontWeight: 600, direction: "rtl",
+        }}>
+          <span>⚠️ {gpsError}</span>
+          <button
+            onClick={() => setGpsError(null)}
+            style={{
+              background: "transparent", border: "none", color: "white",
+              fontSize: 16, cursor: "pointer", flexShrink: 0, lineHeight: 1, padding: 2,
+            }}
+          >✕</button>
+        </div>
+      )}
 
       {/* ── Arrived at destination popup ── */}
       {showArrivedPopup && navDest && (
@@ -603,18 +760,32 @@ function MapPageInner() {
               {/* Distance + street name */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
-                  fontSize: 30, fontWeight: 900, lineHeight: 1,
-                  fontFamily: "var(--font-display)",
+                  fontSize: routeError ? 15 : 30, fontWeight: 900, lineHeight: routeError ? 1.3 : 1,
+                  fontFamily: routeError ? "var(--font-sans)" : "var(--font-display)",
                 }}>
-                  {currentStep ? fmtDist(distToStep) : (navRoute ? "ממשיך…" : "מחשב…")}
+                  {routeError ?? (currentStep ? fmtDist(distToStep) : (navRoute ? "ממשיך…" : "מחשב…"))}
                 </div>
-                <div style={{
-                  fontSize: 14, fontWeight: 600, marginTop: 4,
-                  opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                }}>
-                  {currentStep?.name || navDest.title}
-                </div>
+                {!routeError && (
+                  <div style={{
+                    fontSize: 14, fontWeight: 600, marginTop: 4,
+                    opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  }}>
+                    {currentStep?.name || navDest.title}
+                  </div>
+                )}
               </div>
+              {/* Voice guidance toggle */}
+              <button
+                onClick={() => setVoiceEnabled(v => !v)}
+                title={voiceEnabled ? "כבה הכוונה קולית" : "הפעל הכוונה קולית"}
+                style={{
+                  width: 40, height: 40, flexShrink: 0, borderRadius: 10,
+                  background: voiceEnabled ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.12)",
+                  border: "1.5px solid rgba(255,255,255,0.3)",
+                  color: "white", cursor: "pointer", fontSize: 17,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+              >{voiceEnabled ? "🔊" : "🔇"}</button>
               {/* Cancel button */}
               <button
                 onClick={endNavigation}
@@ -627,7 +798,7 @@ function MapPageInner() {
                 }}
               >✕ בטל</button>
             </div>
-            {/* Secondary row — total distance + duration + destination name */}
+            {/* Secondary row — total distance + duration + destination name, or retry on error */}
             <div style={{
               padding: "6px 16px 10px",
               display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -637,11 +808,22 @@ function MapPageInner() {
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "55%" }}>
                 {navDest.title}
               </span>
-              <span style={{ flexShrink: 0 }}>
-                {navInfo
-                  ? `${fmtDist(navInfo.dist)} · ${fmtDur(navInfo.dur)}`
-                  : "מחשב מסלול…"}
-              </span>
+              {routeError ? (
+                <button
+                  onClick={retryRoute}
+                  style={{
+                    background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.35)",
+                    color: "white", borderRadius: 8, padding: "4px 10px",
+                    fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0, opacity: 1,
+                  }}
+                >↻ נסה שוב</button>
+              ) : (
+                <span style={{ flexShrink: 0 }}>
+                  {rerouting
+                    ? "🔄 מנתב מחדש…"
+                    : (navInfo ? `${fmtDist(navInfo.dist)} · ${fmtDur(navInfo.dur)}` : "מחשב מסלול…")}
+                </span>
+              )}
             </div>
           </div>
         ) : (
