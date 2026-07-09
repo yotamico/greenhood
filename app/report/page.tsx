@@ -685,11 +685,11 @@ export default function ReportPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
           <PickupOption
             id="tomorrow" current={pickupDay} setCurrent={setPickupDay}
-            label="פינוי מחר 07:00" sub="יסומן כדחוף לשכנים" hot
+            label="איסוף ביום פינוי הבא" sub="יסומן כדחוף לשכנים" hot
           />
           <PickupOption
             id="flexible" current={pickupDay} setCurrent={setPickupDay}
-            label="גמיש / זמין כעת" sub="ללא מועד פינוי קבוע"
+            label="חפץ למסירה" sub="בתיאום מראש"
           />
         </div>
 
