@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { verifyUser } from "@/lib/verifyUser";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { userId, approve } = await req.json();
-  if (!userId || typeof approve !== "boolean") {
+  const { approve } = await req.json();
+  if (typeof approve !== "boolean") {
     return NextResponse.json({ ok: false, error: "בקשה לא תקינה" }, { status: 400 });
   }
 
@@ -14,6 +15,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ ok: false, error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 500 });
   }
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
+
+  const user = await verifyUser(req, supabase);
+  if (!user) return NextResponse.json({ ok: false, error: "לא מחובר" }, { status: 401 });
+  const userId = user.id;
 
   const { data: item, error: itemErr } = await supabase
     .from("items")

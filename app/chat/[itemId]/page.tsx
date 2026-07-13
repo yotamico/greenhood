@@ -153,10 +153,14 @@ export default function ChatPage() {
     if (newMsg) setMessages(prev => [...prev, newMsg as Message]);
 
     // Trigger push notification to item reporter
+    const { data: { session } } = await supabase.auth.getSession();
     fetch("/api/send-push", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ item_id: itemId, sender_id: userId, content, item_title: item?.title }),
+      headers: {
+        "Content-Type": "application/json",
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: JSON.stringify({ item_id: itemId, content, item_title: item?.title }),
     }).catch(() => {});
 
     setSending(false);

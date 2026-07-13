@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
+import { verifyUser } from "@/lib/verifyUser";
 
 export async function POST(req: NextRequest) {
   const pubKey  = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
@@ -19,8 +20,12 @@ export async function POST(req: NextRequest) {
   }
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, serviceKey);
 
-  const { item_id, sender_id, content, item_title } = await req.json();
-  if (!item_id || !sender_id || !content) return NextResponse.json({ ok: false });
+  const user = await verifyUser(req, supabase);
+  if (!user) return NextResponse.json({ ok: false, error: "לא מחובר" }, { status: 401 });
+  const sender_id = user.id;
+
+  const { item_id, content, item_title } = await req.json();
+  if (!item_id || !content) return NextResponse.json({ ok: false });
 
   const { data: item } = await supabase
     .from("items")

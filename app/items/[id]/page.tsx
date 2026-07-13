@@ -167,10 +167,12 @@ export default function ItemDetailPage() {
     setRequestingClose(true);
     try {
       const pos = await getGpsPosition();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace("/login"); return; }
       const res = await fetch(`/api/items/${id}/request-close`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       });
       const data = await res.json();
       if (!data.ok) { alert(data.error ?? "שגיאה בשליחת הדיווח"); return; }
@@ -187,10 +189,12 @@ export default function ItemDetailPage() {
     if (!userId || confirming) return;
     setConfirming(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace("/login"); return; }
       const res = await fetch(`/api/items/${id}/confirm-taken`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, approve }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ approve }),
       });
       const data = await res.json();
       if (!data.ok) { alert(data.error ?? "שגיאה"); return; }
@@ -205,10 +209,12 @@ export default function ItemDetailPage() {
     if (!userId || disputing) return;
     setDisputing(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace("/login"); return; }
       const res = await fetch(`/api/items/${id}/dispute`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (!data.ok) { alert(data.error ?? "שגיאה"); return; }

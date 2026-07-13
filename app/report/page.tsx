@@ -280,17 +280,19 @@ export default function ReportPage() {
       await supabase.rpc("increment_xp" as never, { user_id: userId, amount: 50 } as never);
     } catch { /* best-effort */ }
 
-    fetch("/api/broadcast-push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        item_title:   title,
-        item_address: address,
-        item_lat:     lat ?? null,
-        item_lng:     lng ?? null,
-        sender_id:    userId,
-      }),
-    }).catch(() => {});
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return;
+      fetch("/api/broadcast-push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          item_title:   title,
+          item_address: address,
+          item_lat:     lat ?? null,
+          item_lng:     lng ?? null,
+        }),
+      }).catch(() => {});
+    });
 
     setLoading(false);
     router.replace("/map");
