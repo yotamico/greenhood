@@ -19,7 +19,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const [user,    setUser]    = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [myItems, setMyItems] = useState<{ id:string; title:string; status:string }[]>([]);
+  const [myItems, setMyItems] = useState<{ id:string; title:string; status:string; moderation_status:string }[]>([]);
   const [unreadItems, setUnreadItems] = useState<Set<string>>(new Set());
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("default");
   const [notifLoading, setNotifLoading] = useState(false);
@@ -75,7 +75,7 @@ export default function ProfilePage() {
       if (p) setProfile(p as Profile);
 
       const { data: items } = await supabase.from("items")
-        .select("id,title,status")
+        .select("id,title,status,moderation_status")
         .eq("reporter_id", session.user.id)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -380,13 +380,24 @@ export default function ProfilePage() {
                           background:"#E53E3E", color:"#fff", border:"1.5px solid var(--ink)",
                         }}>הודעה חדשה 💬</span>
                       )}
-                      <span style={{
-                        padding:"3px 10px", borderRadius:999, fontSize:11, fontWeight:800,
-                        background: it.status==="taken" ? "var(--primary-tint)" : "var(--warning-tint)",
-                        border:"1.5px solid var(--ink)",
-                      }}>
-                        {it.status==="taken" ? "✅ נלקח" : "🟡 פעיל"}
-                      </span>
+                      {(() => {
+                        const badge = it.status === "taken"
+                          ? { bg: "var(--primary-tint)", label: "✅ נלקח" }
+                          : it.moderation_status === "pending"
+                          ? { bg: "var(--warning-tint)", label: "🕓 ממתין" }
+                          : it.moderation_status === "rejected"
+                          ? { bg: "var(--accent-tint)", label: "❌ נדחה" }
+                          : { bg: "var(--primary-tint)", label: "🟢 פעיל" };
+                        return (
+                          <span style={{
+                            padding:"3px 10px", borderRadius:999, fontSize:11, fontWeight:800,
+                            background: badge.bg,
+                            border:"1.5px solid var(--ink)",
+                          }}>
+                            {badge.label}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                 </Link>
