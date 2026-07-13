@@ -154,10 +154,11 @@ export default function ItemDetailPage() {
   }
 
   async function updateStatus(s: "active"|"taken"|"removed") {
-    setItemStatus(s);
     const upd: Record<string, unknown> = { status: s };
     if (s === "taken") upd.taken_at = new Date().toISOString();
-    await supabase.from("items").update(upd).eq("id", id);
+    const { error } = await supabase.from("items").update(upd).eq("id", id);
+    if (error) { alert("שגיאה בעדכון הסטטוס: " + error.message); return; }
+    setItemStatus(s);
     setItem(prev => prev ? { ...prev, status: s } : prev);
   }
 
