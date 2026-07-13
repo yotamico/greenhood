@@ -101,9 +101,13 @@ export default function ReportPage() {
     setAiFilled(false);
     try {
       const { base64, mediaType } = await resizeToBase64(file);
+      const { data: { session } } = await supabase.auth.getSession();
       const r = await fetch("/api/analyze-image", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ imageBase64: base64, mediaType }),
       });
       if (!r.ok) return;
