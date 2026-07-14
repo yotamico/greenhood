@@ -20,13 +20,19 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
   try {
     const rawRows = await adapter.fetchStreets();
 
+    // A street can appear more than once (one row per collection day), so cache geocoding
+    // results per street_name instead of re-querying Nominatim for the same address.
+    const geocodeCache = new Map<string, { lat: number | null; lng: number | null }>();
+
     const rows = [];
     for (const row of rawRows) {
       let { lat, lng } = row;
       if (lat == null || lng == null) {
-        const geocoded = await geocodeStreet(adapter.city, row.street_name);
-        lat = geocoded?.lat ?? null;
-        lng = geocoded?.lng ?? null;
+        if (!geocodeCache.has(row.street_name)) {
+          const geocoded = await geocodeStreet(adapter.city, row.street_name);
+          geocodeCache.set(row.street_name, { lat: geocoded?.lat ?? null, lng: geocoded?.lng ?? null });
+        }
+        ({ lat, lng } = geocodeCache.get(row.street_name)!);
       }
       rows.push({
         city: adapter.city,
@@ -40,7 +46,7 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
 
     const { error: upsertError } = await supabase
       .from("street_schedules")
-      .upsert(rows, { onConflict: "city,street_name" });
+      .upsert(rows, { onConflict: "city,street_name,collection_day" });
     if (upsertError) throw upsertError;
 
     await supabase

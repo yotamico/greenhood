@@ -57,7 +57,7 @@ export default function ItemDetailPage() {
   const [loading,      setLoading]      = useState(true);
   const [navigating,   setNavigating]   = useState(false);
   const [activeImg,    setActiveImg]    = useState<Image | null>(null);
-  const [clearanceDay, setClearanceDay] = useState<string | null>(null);
+  const [clearanceDays, setClearanceDays] = useState<string[]>([]);
   const [savesCount,   setSavesCount]   = useState(0);
   const [msgsCount,    setMsgsCount]    = useState(0);
   const [itemStatus,   setItemStatus]   = useState<"active"|"taken"|"removed">("active");
@@ -111,10 +111,12 @@ export default function ItemDetailPage() {
           } catch { /* ignore */ }
         }
         const haystack = norm(heStreet ?? it.address);
-        const match = sched.find(s =>
+        // A street can have more than one collection_day row (e.g. twice-weekly bulky pickup) —
+        // show all of them, not just the first match.
+        const matches = sched.filter(s =>
           haystack.includes(norm(s.street_name)) || norm(s.street_name).includes(haystack.split(",")[0])
         );
-        if (match) setClearanceDay(match.collection_day);
+        if (matches.length) setClearanceDays(matches.map(m => m.collection_day));
       }
 
       setLoading(false);
@@ -597,8 +599,8 @@ export default function ItemDetailPage() {
           <span style={{ fontSize:20 }}>📍</span>
           <div>
             <div style={{ fontWeight:700, fontSize:14 }}>{item.address}</div>
-            {clearanceDay && (
-              <div style={{ fontSize:12, color:"var(--muted)", fontWeight:500, marginTop:2 }}>🚛 פינוי עירוני: {clearanceDay}</div>
+            {clearanceDays.length > 0 && (
+              <div style={{ fontSize:12, color:"var(--muted)", fontWeight:500, marginTop:2 }}>🚛 פינוי עירוני: {clearanceDays.join(", ")}</div>
             )}
           </div>
         </div>

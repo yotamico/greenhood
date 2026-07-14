@@ -1,7 +1,8 @@
 import { CityAdapter } from "./types";
+import { ganYavneAdapter } from "./adapters/gan-yavne";
 
 // Maps city_sync_sources.adapter_key -> adapter implementation.
-// Stage A (infrastructure only): intentionally empty. Cities are registered in
-// city_sync_sources with status='manual' and no adapter_key until a Stage B task
-// builds and adds a parser for that specific city.
-export const CITY_ADAPTERS: Record<string, CityAdapter> = {};
+// Cities with status='manual' in city_sync_sources intentionally have no entry here yet.
+export const CITY_ADAPTERS: Record<string, CityAdapter> = {
+  "gan-yavne": ganYavneAdapter,
+};
