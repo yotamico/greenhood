@@ -87,10 +87,16 @@ export default function ItemDetailPage() {
       setImages(imgList);
       setActiveImg(imgList.find(i => i.is_primary) ?? imgList[0] ?? null);
 
-      const [{ data: rep }, { data: sv }, { data: sched }, { count: sc }, { count: mc }] = await Promise.all([
+      let heStreet: string | null = null;
+      let heCity: string | null = null;
+      const geocodePromise = (it.lat && it.lng)
+        ? fetch(`/api/geocode?lat=${it.lat}&lng=${it.lng}`).then(r => r.json()).catch(() => null)
+        : Promise.resolve(null);
+
+      const [{ data: rep }, { data: sv }, geo, { count: sc }, { count: mc }] = await Promise.all([
         supabase.from("profiles").select("name,avatar_color,xp").eq("id", it.reporter_id).single(),
         supabase.from("saved_items").select("item_id").eq("user_id", session.user.id).eq("item_id", id).maybeSingle(),
-        supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה"),
+        geocodePromise,
         supabase.from("saved_items").select("*", { count:"exact", head:true }).eq("item_id", id),
         supabase.from("messages").select("*", { count:"exact", head:true }).eq("item_id", id),
       ]);
@@ -100,16 +106,20 @@ export default function ItemDetailPage() {
       setSavesCount(sc ?? 0);
       setMsgsCount(mc ?? 0);
 
-      if (sched?.length && it) {
+      heStreet = geo?.address?.road ?? null;
+      heCity = geo?.address?.city ?? geo?.address?.town ?? geo?.address?.village ?? null;
+
+      // Query the item's own city first (from reverse-geocoding its lat/lng); fall back to
+      // Nes Ziona if that city has no data (e.g. old items without lat/lng, or an unsupported city).
+      let { data: sched } = heCity
+        ? await supabase.from("street_schedules").select("street_name,collection_day").eq("city", heCity)
+        : { data: null as { street_name: string; collection_day: string }[] | null };
+      if (!sched?.length) {
+        ({ data: sched } = await supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה"));
+      }
+
+      if (sched?.length) {
         const norm = (s: string) => s.replace(/['"״"""]/g, "").trim();
-        let heStreet: string | null = null;
-        if (it.lat && it.lng) {
-          try {
-            const rg = await fetch(`/api/geocode?lat=${it.lat}&lng=${it.lng}`);
-            const geo = await rg.json();
-            heStreet = geo.address?.road ?? null;
-          } catch { /* ignore */ }
-        }
         const haystack = norm(heStreet ?? it.address);
         // A street can have more than one collection_day row (e.g. twice-weekly bulky pickup) —
         // show all of them, not just the first match.

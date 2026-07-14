@@ -50,7 +50,7 @@ export default function FeedPage() {
   const [search,setSearch]  = useState("");
   const [authed,setAuthed]  = useState(false);
   const [userId,setUserId]  = useState<string|null>(null);
-  const [scheduleData, setScheduleData] = useState<{street_name:string; collection_day:string}[]>([]);
+  const [scheduleData, setScheduleData] = useState<{street_name:string; collection_day:string; city:string}[]>([]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data:{session}}) => {
@@ -67,8 +67,12 @@ export default function FeedPage() {
   }, [userId]);
 
   useEffect(() => {
-    supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה")
-      .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;collection_day:string}[]));
+    // city_sync_sources is service-role-only (no RLS policy for the client), so we can't ask it
+    // which cities are "active" from here — instead just fetch every street_schedules row.
+    // The table only holds real municipal data (a few hundred rows across all cities today),
+    // so an unfiltered fetch is cheap and always reflects whichever cities actually have data.
+    supabase.from("street_schedules").select("street_name,collection_day,city")
+      .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;collection_day:string;city:string}[]));
   }, []);
 
   useEffect(() => {
@@ -89,9 +93,7 @@ export default function FeedPage() {
   const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
 
   const tomorrowHebrewDay = HEBREW_DAYS[(new Date().getDay() + 1) % 7];
-  const tomorrowStreets = new Set(
-    scheduleData.filter(s => s.collection_day === tomorrowHebrewDay).map(s => s.street_name)
-  );
+  const tomorrowSchedule = scheduleData.filter(s => s.collection_day === tomorrowHebrewDay);
 
   const displayed = items.filter(it => {
     if (filter === "saved")  return saved.has(it.id);
@@ -192,13 +194,13 @@ export default function FeedPage() {
           {/* column 1 */}
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {col1.map(it => (
-              <MasonryCard key={it.id} item={it} saved={saved.has(it.id)} onSave={toggleSave} onPress={() => router.push(`/items/${it.id}`)} today={today} tomorrow={tomorrow} tomorrowStreets={tomorrowStreets}/>
+              <MasonryCard key={it.id} item={it} saved={saved.has(it.id)} onSave={toggleSave} onPress={() => router.push(`/items/${it.id}`)} today={today} tomorrow={tomorrow} tomorrowSchedule={tomorrowSchedule}/>
             ))}
           </div>
           {/* column 2 */}
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {col2.map(it => (
-              <MasonryCard key={it.id} item={it} saved={saved.has(it.id)} onSave={toggleSave} onPress={() => router.push(`/items/${it.id}`)} today={today} tomorrow={tomorrow} tomorrowStreets={tomorrowStreets}/>
+              <MasonryCard key={it.id} item={it} saved={saved.has(it.id)} onSave={toggleSave} onPress={() => router.push(`/items/${it.id}`)} today={today} tomorrow={tomorrow} tomorrowSchedule={tomorrowSchedule}/>
             ))}
           </div>
         </div>
@@ -209,17 +211,21 @@ export default function FeedPage() {
   );
 }
 
-function MasonryCard({ item, saved, onSave, onPress, today, tomorrow, tomorrowStreets }:{
+function MasonryCard({ item, saved, onSave, onPress, today, tomorrow, tomorrowSchedule }:{
   item:Item; saved:boolean; onSave:(id:string)=>void; onPress:()=>void;
-  today:string; tomorrow:string; tomorrowStreets:Set<string>;
+  today:string; tomorrow:string; tomorrowSchedule:{street_name:string; city:string}[];
 }) {
   const emoji    = CAT_EMOJI[item.category] ?? "📦";
   const color    = CAT_COLOR[item.category] ?? "var(--paper-2)";
   const urgent   = item.pickup_day === today || item.pickup_day === tomorrow;
   const isTaken  = item.status === "taken";
   const norm     = (s:string) => s.replace(/['"״"]/g,"");
-  const clearanceTomorrow = tomorrowStreets.size > 0 &&
-    [...tomorrowStreets].some(st => norm(item.address).includes(norm(st)));
+  // Prefer a city+street match (avoids two cities sharing a street name); fall back to
+  // street-only if the item's free-text address doesn't spell out a city.
+  const addr = norm(item.address);
+  const cityAndStreetMatches = tomorrowSchedule.filter(s => addr.includes(norm(s.city)) && addr.includes(norm(s.street_name)));
+  const streetOnlyMatches = tomorrowSchedule.filter(s => addr.includes(norm(s.street_name)));
+  const clearanceTomorrow = (cityAndStreetMatches.length > 0 || streetOnlyMatches.length > 0);
   const photoUrl = item.item_images?.find(img => img.is_primary)?.url
                 ?? item.item_images?.[0]?.url
                 ?? null;

@@ -1,10 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-const OVERPASS_QUERY =
-  '[out:json][timeout:60];way["highway"]["name"](31.88,34.76,31.97,34.88);out geom;';
+// Default box covers the Nes Ziona area — kept as the fallback when no lat/lng is given,
+// so existing callers/cache entries without those params keep working unchanged.
+const DEFAULT_BBOX = "31.88,34.76,31.97,34.88";
+const BBOX_MARGIN_DEG = 0.06;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const lat = parseFloat(searchParams.get("lat") ?? "");
+    const lng = parseFloat(searchParams.get("lng") ?? "");
+    const bbox = Number.isFinite(lat) && Number.isFinite(lng)
+      ? `${lat - BBOX_MARGIN_DEG},${lng - BBOX_MARGIN_DEG},${lat + BBOX_MARGIN_DEG},${lng + BBOX_MARGIN_DEG}`
+      : DEFAULT_BBOX;
+    const OVERPASS_QUERY = `[out:json][timeout:60];way["highway"]["name"](${bbox});out geom;`;
     const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(OVERPASS_QUERY)}`;
     const res = await fetch(url, {
       headers: { "User-Agent": "GreenHOOD-App/1.0" },

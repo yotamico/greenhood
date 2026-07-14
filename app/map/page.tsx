@@ -210,13 +210,20 @@ const JS_DAY_TO_HEBREW: Record<number,string> = {
   0:"ראשון",1:"שני",2:"שלישי",3:"רביעי",4:"חמישי",5:"שישי",
 };
 
-let _streetCache: Map<string,[number,number][][]> | null = null;
-let _streetCachePromise: Promise<Map<string,[number,number][][]>> | null = null;
+// Keyed by rounded lat/lng (falls back to "default" for the Nes Ziona box) so switching
+// cities doesn't serve another area's cached street geometry.
+const _streetCache = new Map<string, Map<string,[number,number][][]>>();
+const _streetCachePromises = new Map<string, Promise<Map<string,[number,number][][]>>>();
 
-function fetchNesZionaStreets(): Promise<Map<string,[number,number][][]>> {
-  if (_streetCache) return Promise.resolve(_streetCache);
-  if (_streetCachePromise) return _streetCachePromise;
-  _streetCachePromise = fetch("/api/streets")
+function fetchAreaStreets(lat?: number, lng?: number): Promise<Map<string,[number,number][][]>> {
+  const key = (lat != null && lng != null) ? `${lat.toFixed(2)},${lng.toFixed(2)}` : "default";
+  const cached = _streetCache.get(key);
+  if (cached) return Promise.resolve(cached);
+  const pending = _streetCachePromises.get(key);
+  if (pending) return pending;
+
+  const url = (lat != null && lng != null) ? `/api/streets?lat=${lat}&lng=${lng}` : "/api/streets";
+  const promise = fetch(url)
     .then(r => { if (!r.ok) throw new Error(); return r.json(); })
     .then((data: { elements?: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] }) => {
       const map = new Map<string,[number,number][][]>();
@@ -227,12 +234,13 @@ function fetchNesZionaStreets(): Promise<Map<string,[number,number][][]>> {
         if (!map.has(name)) map.set(name, []);
         map.get(name)!.push(seg);
       }
-      _streetCache = map;
-      _streetCachePromise = null;
+      _streetCache.set(key, map);
+      _streetCachePromises.delete(key);
       return map;
     })
-    .catch(() => { _streetCachePromise = null; return new Map<string,[number,number][][]>(); });
-  return _streetCachePromise;
+    .catch(() => { _streetCachePromises.delete(key); return new Map<string,[number,number][][]>(); });
+  _streetCachePromises.set(key, promise);
+  return promise;
 }
 
 function MapPageInner() {
@@ -293,11 +301,30 @@ function MapPageInner() {
   const [streetError,      setStreetError]      = useState(false);
   const [streetCount,      setStreetCount]      = useState(0);
   const [streetSchedule,   setStreetSchedule]   = useState<{ street_name: string; collection_day: string }[]>([]);
+  const [activeCity,       setActiveCity]       = useState("נס ציונה");
+  const cityDetectedRef = useRef(false);
+
+  /* detect the user's city once (from live GPS), falling back to Nes Ziona if it fails or the
+     city has no data — never re-runs on every position update */
+  useEffect(() => {
+    if (cityDetectedRef.current || !userPos) return;
+    cityDetectedRef.current = true;
+    const [lat, lng] = userPos;
+    fetch(`/api/geocode?lat=${lat}&lng=${lng}`)
+      .then(r => r.json())
+      .then(geo => {
+        const city = geo?.address?.city ?? geo?.address?.town ?? geo?.address?.village ?? null;
+        if (!city) return;
+        return supabase.from("street_schedules").select("street_name", { count: "exact", head: true }).eq("city", city)
+          .then(({ count }) => { if (count && count > 0) setActiveCity(city); });
+      })
+      .catch(() => { /* keep default city */ });
+  }, [userPos]);
 
   useEffect(() => {
-    supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה")
+    supabase.from("street_schedules").select("street_name,collection_day").eq("city", activeCity)
       .then(({ data }) => setStreetSchedule((data ?? []) as { street_name: string; collection_day: string }[]));
-  }, []);
+  }, [activeCity]);
 
   /* navigation mode */
   const [navDest,        setNavDest]        = useState<NavDest | null>(null);
@@ -361,7 +388,7 @@ function MapPageInner() {
     const scheduledNames = new Set(streetModeNames);
     setStreetLoading(true);
     setStreetError(false);
-    fetchNesZionaStreets().then(streetMap => {
+    fetchAreaStreets(userPos?.[0], userPos?.[1]).then(streetMap => {
       if (streetMap.size === 0) { setStreetError(true); setClearanceStreets([]); return; }
       const segs: [number,number][][] = [];
       let matched = 0;
