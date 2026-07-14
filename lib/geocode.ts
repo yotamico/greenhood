@@ -15,9 +15,8 @@ async function throttle() {
   lastRequestAt = Date.now();
 }
 
-export async function geocodeStreet(city: string, streetName: string): Promise<{ lat: number; lng: number } | null> {
+async function nominatimSearch(q: string): Promise<{ lat: number; lng: number } | null> {
   await throttle();
-  const q = `${streetName}, ${city}, ישראל`;
   const res = await fetch(
     `${NOMINATIM_URL}?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=il`,
     { headers: { "User-Agent": USER_AGENT } }
@@ -30,4 +29,19 @@ export async function geocodeStreet(city: string, streetName: string): Promise<{
   const lng = parseFloat(first.lon);
   if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
   return { lat, lng };
+}
+
+export async function geocodeStreet(city: string, streetName: string): Promise<{ lat: number; lng: number } | null> {
+  const found = await nominatimSearch(`${streetName}, ${city}, ישראל`);
+  if (found) return found;
+
+  // Official Hebrew place names use the full spelling ("קריית X"), but OpenStreetMap's data is
+  // often indexed under the shorter, more colloquial "קרית X" — retry once with that swapped.
+  if (city.startsWith("קריית ")) {
+    return nominatimSearch(`${streetName}, קרית ${city.slice("קריית ".length)}, ישראל`);
+  }
+  if (city.startsWith("קרית ")) {
+    return nominatimSearch(`${streetName}, קריית ${city.slice("קרית ".length)}, ישראל`);
+  }
+  return null;
 }

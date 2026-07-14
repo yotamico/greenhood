@@ -32,3 +32,18 @@ export function parseHebrewDayAbbrList(text: string): string[] {
 export function dayBefore(day: string): string {
   return DAY_BEFORE[day] ?? day;
 }
+
+// Plain calendar next-day (no Shabbat-skip special case needed here — used for sources that
+// publish the takeout day and expect the collection day to be derived, not the other way round).
+const NEXT_DAY: Record<string, string> = {
+  ראשון: "שני",
+  שני: "שלישי",
+  שלישי: "רביעי",
+  רביעי: "חמישי",
+  חמישי: "שישי",
+  שישי: "שבת",
+};
+
+export function dayAfter(day: string): string {
+  return NEXT_DAY[day] ?? day;
+}
