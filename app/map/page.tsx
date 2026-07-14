@@ -145,6 +145,32 @@ function smoothHeading(prev: number | null, next: number): number {
   return (prev + diff * 0.3 + 360) % 360;
 }
 
+/* GPS fix quality gate — rejects noisy/implausible fixes (poor accuracy circle, or a
+   "teleport" faster than any real movement) so they never reach the camera/route logic.
+   A fix is accepted anyway once too much time has passed without a good one, so
+   navigation never fully stalls waiting for a perfect reading. */
+const ACCURACY_THRESHOLD_M = 30;
+const STALE_FIX_TIMEOUT_MS = 8000;
+const MAX_PLAUSIBLE_SPEED_MPS = 30; // ~108 km/h
+function shouldAcceptFix(
+  candidate: [number, number],
+  accuracy: number | null,
+  prev: [number, number] | null,
+  prevTime: number | null,
+  now: number,
+  lastGoodFixAt: number | null,
+): boolean {
+  if (!prev || lastGoodFixAt == null) return true;
+  const badAccuracy = accuracy != null && accuracy > ACCURACY_THRESHOLD_M;
+  let implausible = false;
+  if (prevTime != null) {
+    const elapsedS = Math.max((now - prevTime) / 1000, 0.001);
+    implausible = haversine(prev, candidate) / elapsedS > MAX_PLAUSIBLE_SPEED_MPS;
+  }
+  if (!badAccuracy && !implausible) return true;
+  return now - lastGoodFixAt > STALE_FIX_TIMEOUT_MS;
+}
+
 function speak(text: string) {
   if (typeof window === "undefined" || !("speechSynthesis" in window) || !text) return;
   window.speechSynthesis.cancel();
@@ -286,8 +312,13 @@ function MapPageInner() {
   const [voiceEnabled,   setVoiceEnabled]   = useState(false);
   const [gpsError,       setGpsError]       = useState<string | null>(null);
   const prevPosRef = useRef<[number,number] | null>(null);
+  const prevPosTimeRef = useRef<number | null>(null);
+  const lastGoodFixAtRef = useRef<number | null>(null);
   const smoothedHeadingRef = useRef<number | null>(null);
   const headingAnchorRef = useRef<[number,number] | null>(null);
+  const orientationAvailableRef = useRef(false);
+  const lastOrientationAtRef = useRef(0);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const arrivedRef = useRef(false);
   /* dedup ref — tracks which destination we already fetched a route for */
   const routeDestRef = useRef<string | null>(null);
@@ -379,11 +410,19 @@ function MapPageInner() {
         setGpsError(null);
         const newPos: [number,number] = [pos.coords.latitude, pos.coords.longitude];
         const prev = prevPosRef.current;
+        const now = Date.now();
+        if (!shouldAcceptFix(newPos, pos.coords.accuracy ?? null, prev, prevPosTimeRef.current, now, lastGoodFixAtRef.current)) {
+          return; // noisy or implausible fix — drop it entirely, don't touch position/heading state
+        }
+        lastGoodFixAtRef.current = now;
+        prevPosTimeRef.current = now;
         const moved = !prev
           || Math.abs(newPos[0] - prev[0]) > MIN_DELTA
           || Math.abs(newPos[1] - prev[1]) > MIN_DELTA;
         if (moved) setUserPos(newPos);
-        if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
+        if (orientationAvailableRef.current && Date.now() - lastOrientationAtRef.current < 2000) {
+          /* compass is driving heading — GPS-derived heading below is skipped to avoid two sources fighting */
+        } else if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
           const sm = smoothHeading(smoothedHeadingRef.current, pos.coords.heading);
           smoothedHeadingRef.current = sm;
           setHeading(sm);
@@ -417,6 +456,66 @@ function MapPageInner() {
     );
     return () => navigator.geolocation.clearWatch(id);
   }, []);
+
+  /* device compass heading — primary heading source during active navigation.
+     Android Chrome fires "deviceorientationabsolute" without a permission prompt;
+     iOS Safari needs "deviceorientation" + webkitCompassHeading (and, on iOS 13+, an explicit
+     DeviceOrientationEvent.requestPermission() call from a user gesture — handled in onNavigate,
+     not here, since this effect isn't triggered by one). Feeds the same smoothHeading() pipeline
+     the GPS-derived fallback uses, so there's a single smoothing path either way. */
+  useEffect(() => {
+    if (!navDest || typeof window === "undefined") return;
+    function handleOrientation(e: Event) {
+      const evt = e as DeviceOrientationEvent & { webkitCompassHeading?: number };
+      let compassHeading: number | null = null;
+      if (evt.webkitCompassHeading != null && !isNaN(evt.webkitCompassHeading)) {
+        compassHeading = evt.webkitCompassHeading;
+      } else if (evt.absolute && evt.alpha != null) {
+        compassHeading = (360 - evt.alpha) % 360;
+      }
+      if (compassHeading == null || isNaN(compassHeading)) return;
+      lastOrientationAtRef.current = Date.now();
+      orientationAvailableRef.current = true;
+      const sm = smoothHeading(smoothedHeadingRef.current, compassHeading);
+      smoothedHeadingRef.current = sm;
+      setHeading(sm);
+    }
+    window.addEventListener("deviceorientationabsolute", handleOrientation);
+    window.addEventListener("deviceorientation", handleOrientation);
+    return () => {
+      window.removeEventListener("deviceorientationabsolute", handleOrientation);
+      window.removeEventListener("deviceorientation", handleOrientation);
+      orientationAvailableRef.current = false;
+    };
+  }, [navDest]);
+
+  /* keep the screen awake during active navigation — the Screen Wake Lock spec releases the
+     lock automatically when the tab is backgrounded and does NOT reacquire it on return, so
+     the visibilitychange listener below is required, not optional polish. */
+  useEffect(() => {
+    if (!navDest || !("wakeLock" in navigator)) return;
+    let cancelled = false;
+    navigator.wakeLock.request("screen")
+      .then(sentinel => {
+        if (cancelled) { sentinel.release().catch(() => {}); return; }
+        wakeLockRef.current = sentinel;
+      })
+      .catch(() => {}); // denial (e.g. low battery mode) is non-fatal
+
+    function onVisible() {
+      if (document.visibilityState === "visible" && !wakeLockRef.current) {
+        navigator.wakeLock.request("screen").then(s => { wakeLockRef.current = s; }).catch(() => {});
+      }
+    }
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      wakeLockRef.current?.release().catch(() => {});
+      wakeLockRef.current = null;
+    };
+  }, [navDest]);
 
   /* react to nav params — runs on mount AND whenever URL changes */
   useEffect(() => {
@@ -470,7 +569,7 @@ function MapPageInner() {
     if (isReroute) setRerouting(true);
     const [oLat, oLng] = origin;
     fetch(
-      `https://router.project-osrm.org/route/v1/driving/${oLng},${oLat};${dest.lng},${dest.lat}?overview=full&geometries=geojson&steps=true`,
+      `/api/route?oLat=${oLat}&oLng=${oLng}&dLat=${dest.lat}&dLng=${dest.lng}`,
       { signal: controller.signal }
     )
       .then(r => {
@@ -640,6 +739,10 @@ function MapPageInner() {
   }, []);
 
   const onNavigate = useCallback((lat: number, lng: number, title: string) => {
+    /* iOS 13+ only grants compass access from within a synchronous user gesture — this click is
+       the only place we have one during navigation start, so ask here (no-op elsewhere/Android) */
+    const RequestPermission = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent?.requestPermission;
+    if (typeof RequestPermission === "function") RequestPermission().catch(() => {});
     setExpandedId(null);
     routeDestRef.current = null;
     setNavRoute(null);

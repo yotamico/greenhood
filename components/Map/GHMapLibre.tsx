@@ -101,6 +101,14 @@ export default function GHMapLibre({
   const itemStatusRef      = useRef<Map<string, string>>(new Map());
   const prevTriggerRef     = useRef(0);
 
+  /* nav-mode camera: target (latest fix, look-ahead applied) vs. rendered (eased every frame) */
+  type CameraPose = { lat: number; lng: number; heading: number; zoom: number; pitch: number };
+  const targetRef       = useRef<CameraPose | null>(null);
+  const renderedRef      = useRef<CameraPose | null>(null);
+  const rafIdRef          = useRef<number | null>(null);
+  const lastFrameTsRef    = useRef<number | null>(null);
+  const manualFlyActiveRef = useRef(false);
+
   /* ── init ── */
   useEffect(() => {
     if (!containerRef.current) return;
@@ -151,26 +159,66 @@ export default function GHMapLibre({
 
   /* ── nav mode: follow user with heading ──
      Look-ahead is kept modest (60m, was 150m) because any residual noise in the heading
-     estimate gets amplified by this distance into a screen-space camera jump; duration
-     is stretched closer to the GPS update cadence so consecutive eases blend into a
-     continuous glide instead of a series of short jerky cuts. */
+     estimate gets amplified by this distance into a screen-space camera jump. The look-ahead
+     point is written to `targetRef` only — the rAF loop below eases toward it every frame,
+     so that noise gets damped continuously instead of producing one discrete easeTo per raw
+     GPS tick (which is what caused the visible jitter/jumps). */
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapLoaded || !navMode || !userPos) return;
+    if (!navMode || !userPos) return;
     let [lat, lng] = userPos;
     if (heading != null) {
       const rad = heading * Math.PI / 180;
       lat += (60 / 111320) * Math.cos(rad);
       lng += (60 / (111320 * Math.cos(userPos[0] * Math.PI / 180))) * Math.sin(rad);
     }
-    map.easeTo({
-      center: [lng, lat],
-      zoom: 17,
-      pitch: 50,
-      bearing: -(heading ?? 0),
-      duration: 600,
-    });
-  }, [userPos, heading, navMode, mapLoaded]);
+    targetRef.current = { lat, lng, heading: heading ?? 0, zoom: 17, pitch: 50 };
+  }, [userPos, heading, navMode]);
+
+  /* ── nav mode: continuous camera glide ──
+     Runs a requestAnimationFrame loop for the duration of nav mode, exponentially easing the
+     rendered camera pose toward `targetRef` every frame via map.jumpTo (not easeTo — the loop
+     itself already performs the easing, so calling easeTo here as well would double-ease
+     against a moving target and reintroduce the same jitter this replaces). This decouples
+     visual smoothness from the GPS fixes' irregular arrival timing. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded || !navMode) {
+      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+      renderedRef.current = null; // re-seed from the live camera next time nav mode starts
+      lastFrameTsRef.current = null;
+      return;
+    }
+    const TAU_MS = 280; // smoothing time constant — smaller = snappier, larger = smoother/laggier
+    function tick(ts: number) {
+      const map = mapRef.current;
+      if (!map) return;
+      if (!renderedRef.current) {
+        const c = map.getCenter();
+        renderedRef.current = { lat: c.lat, lng: c.lng, heading: -map.getBearing(), zoom: map.getZoom(), pitch: map.getPitch() };
+      }
+      const target = targetRef.current;
+      if (target && !manualFlyActiveRef.current) {
+        const dt = lastFrameTsRef.current != null ? ts - lastFrameTsRef.current : 16;
+        const f = 1 - Math.exp(-dt / TAU_MS);
+        const r = renderedRef.current;
+        r.lat   += (target.lat - r.lat) * f;
+        r.lng   += (target.lng - r.lng) * f;
+        r.zoom  += (target.zoom - r.zoom) * f;
+        r.pitch += (target.pitch - r.pitch) * f;
+        const diff = ((target.heading - r.heading + 540) % 360) - 180; // shortest signed delta
+        r.heading = (r.heading + diff * f + 360) % 360;
+        map.jumpTo({ center: [r.lng, r.lat], zoom: r.zoom, pitch: r.pitch, bearing: -r.heading });
+      }
+      lastFrameTsRef.current = ts;
+      rafIdRef.current = requestAnimationFrame(tick);
+    }
+    rafIdRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    };
+  }, [navMode, mapLoaded]);
 
   /* ── reset pitch/bearing when leaving nav mode ── */
   useEffect(() => {
@@ -179,12 +227,17 @@ export default function GHMapLibre({
     map.easeTo({ pitch: 0, bearing: 0, duration: 500 });
   }, [navMode, mapLoaded]);
 
-  /* ── center on user (locate-me button) ── */
+  /* ── center on user (locate-me button) ──
+     During nav mode the rAF loop above runs at 60fps and would override this flyTo within a
+     single frame — manualFlyActiveRef pauses that loop for the duration of the flyTo so the
+     locate-me tap is actually visible before the live-follow camera resumes. */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !userPos) return;
     if (centerTrigger === 0 || centerTrigger === prevTriggerRef.current) return;
     prevTriggerRef.current = centerTrigger;
+    manualFlyActiveRef.current = true;
+    map.once("moveend", () => { manualFlyActiveRef.current = false; });
     map.flyTo({ center: [userPos[1], userPos[0]], zoom: 16, duration: 1100 });
   }, [centerTrigger, userPos, mapLoaded]);
 
