@@ -4,6 +4,7 @@
   "devCommand": "next dev",
   "installCommand": "npm install",
   "crons": [
-    { "path": "/api/cron/pending-reminders", "schedule": "0 3 * * *" }
+    { "path": "/api/cron/pending-reminders", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/street-schedules-sync", "schedule": "0 4 * * 0" }
   ]
 }
