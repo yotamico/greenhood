@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { syncActiveCities } from "@/lib/streetSchedules/sync";
+import { syncNextCity } from "@/lib/streetSchedules/sync";
+
+// Per-street sources need one HTTP request per street (Rehovot ~605, Rishon ~1000+), so a
+// single run can take minutes — needs the extended execution window, and the daily schedule
+// refreshes one city per day round-robin instead of all cities at once.
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const cronSecret = process.env.CRON_SECRET;
@@ -13,8 +18,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const results = await syncActiveCities();
-    return NextResponse.json({ ok: true, results });
+    const result = await syncNextCity();
+    return NextResponse.json({ ok: true, result });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },

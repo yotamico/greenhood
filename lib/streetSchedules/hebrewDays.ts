@@ -19,14 +19,15 @@ const DAY_BEFORE: Record<string, string> = {
   שישי: "חמישי",
 };
 
-/** Parses "א' , ג' , ה'" into ["ראשון", "שלישי", "חמישי"]. */
+/** Parses "א' , ג' , ה'" or "ב/ד/ו" into full day names, deduplicated. */
 export function parseHebrewDayAbbrList(text: string): string[] {
-  return text
-    .split(",")
+  const days = text
+    .split(/[,/+]/)
     .map((s) => s.trim().replace(/['’]/g, ""))
     .filter(Boolean)
     .map((letter) => DAY_ABBR[letter])
     .filter((d): d is string => Boolean(d));
+  return [...new Set(days)];
 }
 
 export function dayBefore(day: string): string {
