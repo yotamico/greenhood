@@ -123,6 +123,15 @@ export default function GHMapLibre({
     });
     mapRef.current = map;
 
+    /* pause the nav-mode auto-follow loop the instant the user touches the map — drag, pinch-zoom
+       and scroll-zoom all fire "movestart" with `originalEvent` set (unlike our own programmatic
+       jumpTo/flyTo calls, where it's undefined), so this cleanly tells user gestures apart from
+       the camera-follow loop itself. Stays paused until the user taps "locate me" again — matching
+       Waze/Google Maps, which don't fight a manual pan by snapping straight back. */
+    map.on("movestart", (e) => {
+      if (e.originalEvent) manualFlyActiveRef.current = true;
+    });
+
     map.on("load", () => {
       /* navigation route */
       map.addSource("nav-route", { type: "geojson", data: toLineGeoJSON([]) });
@@ -189,6 +198,7 @@ export default function GHMapLibre({
       lastFrameTsRef.current = null;
       return;
     }
+    manualFlyActiveRef.current = false; // fresh start each time nav mode begins — don't inherit a pause from before nav started
     const TAU_MS = 280; // smoothing time constant — smaller = snappier, larger = smoother/laggier
     function tick(ts: number) {
       const map = mapRef.current;
