@@ -2,6 +2,7 @@ import { CityAdapter } from "./types";
 import { ganYavneAdapter } from "./adapters/gan-yavne";
 import { kiryatEkronAdapter } from "./adapters/kiryat-ekron";
 import { nesZionaAdapter } from "./adapters/nes-ziona";
+import { ramatGanAdapter } from "./adapters/ramat-gan";
 import { rehovotAdapter } from "./adapters/rehovot";
 import { rishonLezionAdapter } from "./adapters/rishon-lezion";
 import { telAvivAdapter } from "./adapters/tel-aviv";
@@ -12,6 +13,7 @@ export const CITY_ADAPTERS: Record<string, CityAdapter> = {
   "gan-yavne": ganYavneAdapter,
   "kiryat-ekron": kiryatEkronAdapter,
   "nes-ziona": nesZionaAdapter,
+  "ramat-gan": ramatGanAdapter,
   "rehovot": rehovotAdapter,
   "rishon-lezion": rishonLezionAdapter,
   "tel-aviv": telAvivAdapter,
