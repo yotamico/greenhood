@@ -115,6 +115,10 @@ export async function syncNextCity(): Promise<SyncResult | null> {
     .select("city, adapter_key, last_attempted_at")
     .eq("status", "active")
     .order("last_attempted_at", { ascending: true, nullsFirst: true })
+    // Secondary sort: several cities can share last_attempted_at = NULL (activated but never
+    // cron-attempted), and Postgres orders ties arbitrarily — without this a NULL city could be
+    // skipped for days while another NULL city gets re-picked.
+    .order("city", { ascending: true })
     .limit(1);
   if (error) throw error;
   const source = sources?.[0];

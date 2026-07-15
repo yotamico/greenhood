@@ -4,6 +4,7 @@ import { kiryatEkronAdapter } from "./adapters/kiryat-ekron";
 import { nesZionaAdapter } from "./adapters/nes-ziona";
 import { rehovotAdapter } from "./adapters/rehovot";
 import { rishonLezionAdapter } from "./adapters/rishon-lezion";
+import { telAvivAdapter } from "./adapters/tel-aviv";
 
 // Maps city_sync_sources.adapter_key -> adapter implementation.
 // Cities with status='manual' in city_sync_sources intentionally have no entry here yet.
@@ -13,4 +14,5 @@ export const CITY_ADAPTERS: Record<string, CityAdapter> = {
   "nes-ziona": nesZionaAdapter,
   "rehovot": rehovotAdapter,
   "rishon-lezion": rishonLezionAdapter,
+  "tel-aviv": telAvivAdapter,
 };

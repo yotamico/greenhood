@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 import { TabBar } from "@/components/ui/TabBar";
 
 const CAT_EMOJI: Record<string,string> = {
@@ -71,8 +72,9 @@ export default function FeedPage() {
     // which cities are "active" from here — instead just fetch every street_schedules row.
     // The table only holds real municipal data (a few hundred rows across all cities today),
     // so an unfiltered fetch is cheap and always reflects whichever cities actually have data.
-    supabase.from("street_schedules").select("street_name,collection_day,city")
-      .then(({ data }) => setScheduleData((data ?? []) as {street_name:string;collection_day:string;city:string}[]));
+    fetchAllPages<{street_name:string;collection_day:string;city:string}>((from, to) =>
+      supabase.from("street_schedules").select("street_name,collection_day,city").range(from, to)
+    ).then(setScheduleData);
   }, []);
 
   useEffect(() => {

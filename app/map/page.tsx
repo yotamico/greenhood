@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback, useMemo, Suspense, memo } fro
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 import { TabBar } from "@/components/ui/TabBar";
 import NotificationsPopup from "@/components/NotificationsPopup";
 
@@ -322,8 +323,9 @@ function MapPageInner() {
   }, [userPos]);
 
   useEffect(() => {
-    supabase.from("street_schedules").select("street_name,collection_day").eq("city", activeCity)
-      .then(({ data }) => setStreetSchedule((data ?? []) as { street_name: string; collection_day: string }[]));
+    fetchAllPages<{ street_name: string; collection_day: string }>((from, to) =>
+      supabase.from("street_schedules").select("street_name,collection_day").eq("city", activeCity).range(from, to)
+    ).then(setStreetSchedule);
   }, [activeCity]);
 
   /* navigation mode */

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { fetchAllPages } from "@/lib/fetchAllPages";
 
 const CAT_EMOJI: Record<string, string> = {
   furniture: "🪑", books: "📚", lighting: "💡", plants: "🌿",
@@ -111,11 +112,13 @@ export default function ItemDetailPage() {
 
       // Query the item's own city first (from reverse-geocoding its lat/lng); fall back to
       // Nes Ziona if that city has no data (e.g. old items without lat/lng, or an unsupported city).
-      let { data: sched } = heCity
-        ? await supabase.from("street_schedules").select("street_name,collection_day").eq("city", heCity)
-        : { data: null as { street_name: string; collection_day: string }[] | null };
-      if (!sched?.length) {
-        ({ data: sched } = await supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה"));
+      let sched = heCity
+        ? await fetchAllPages<{ street_name: string; collection_day: string }>((from, to) =>
+            supabase.from("street_schedules").select("street_name,collection_day").eq("city", heCity!).range(from, to))
+        : [];
+      if (!sched.length) {
+        sched = await fetchAllPages((from, to) =>
+          supabase.from("street_schedules").select("street_name,collection_day").eq("city", "נס ציונה").range(from, to));
       }
 
       if (sched?.length) {
