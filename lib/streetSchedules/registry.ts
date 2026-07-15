@@ -1,5 +1,6 @@
 import { CityAdapter } from "./types";
 import { ganYavneAdapter } from "./adapters/gan-yavne";
+import { holonAdapter } from "./adapters/holon";
 import { kiryatEkronAdapter } from "./adapters/kiryat-ekron";
 import { nesZionaAdapter } from "./adapters/nes-ziona";
 import { ramatGanAdapter } from "./adapters/ramat-gan";
@@ -11,6 +12,7 @@ import { telAvivAdapter } from "./adapters/tel-aviv";
 // Cities with status='manual' in city_sync_sources intentionally have no entry here yet.
 export const CITY_ADAPTERS: Record<string, CityAdapter> = {
   "gan-yavne": ganYavneAdapter,
+  "holon": holonAdapter,
   "kiryat-ekron": kiryatEkronAdapter,
   "nes-ziona": nesZionaAdapter,
   "ramat-gan": ramatGanAdapter,
