@@ -11,6 +11,17 @@ export interface SyncResult {
   error?: string;
 }
 
+// Supabase's PostgrestError (and similar thrown API error objects) aren't `instanceof Error`,
+// so `err.message` / `String(err)` silently degrade to "[object Object]" for them - this was
+// observed hiding the real cause of a failed sync. Prefer any `.message` string present.
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err && typeof (err as { message: unknown }).message === "string") {
+    return (err as { message: string }).message;
+  }
+  return String(err);
+}
+
 function getServiceClient(): SupabaseClient {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!serviceKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");
@@ -94,7 +105,7 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
       missingCoords: unresolved.length - geocoded,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     await supabase
       .from("city_sync_sources")
       .update({ last_sync_error: message })
