@@ -302,11 +302,12 @@ function MapPageInner() {
   const [streetError,      setStreetError]      = useState(false);
   const [streetCount,      setStreetCount]      = useState(0);
   const [streetSchedule,   setStreetSchedule]   = useState<{ street_name: string; collection_day: string }[]>([]);
-  const [activeCity,       setActiveCity]       = useState("נס ציונה");
+  const [activeCity,       setActiveCity]       = useState<string | null>(null);
   const cityDetectedRef = useRef(false);
 
-  /* detect the user's city once (from live GPS), falling back to Nes Ziona if it fails or the
-     city has no data — never re-runs on every position update */
+  /* detect the user's city once (from live GPS) — stays null (no street data shown) if
+     detection fails or the city has no rows in street_schedules; never re-runs on every
+     position update */
   useEffect(() => {
     if (cityDetectedRef.current || !userPos) return;
     cityDetectedRef.current = true;
@@ -319,10 +320,11 @@ function MapPageInner() {
         return supabase.from("street_schedules").select("street_name", { count: "exact", head: true }).eq("city", city)
           .then(({ count }) => { if (count && count > 0) setActiveCity(city); });
       })
-      .catch(() => { /* keep default city */ });
+      .catch(() => { /* stay undetected */ });
   }, [userPos]);
 
   useEffect(() => {
+    if (!activeCity) { setStreetSchedule([]); return; }
     fetchAllPages<{ street_name: string; collection_day: string }>((from, to) =>
       supabase.from("street_schedules").select("street_name,collection_day").eq("city", activeCity).range(from, to)
     ).then(setStreetSchedule);
