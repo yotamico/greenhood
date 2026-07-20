@@ -1,5 +1,6 @@
 import { CityAdapter } from "./types";
 import { ganYavneAdapter } from "./adapters/gan-yavne";
+import { givatayimAdapter } from "./adapters/givatayim";
 import { herzliyaAdapter } from "./adapters/herzliya";
 import { holonAdapter } from "./adapters/holon";
 import { kfarSabaAdapter } from "./adapters/kfar-saba";
@@ -16,6 +17,7 @@ import { telAvivAdapter } from "./adapters/tel-aviv";
 // Cities with status='manual' in city_sync_sources intentionally have no entry here yet.
 export const CITY_ADAPTERS: Record<string, CityAdapter> = {
   "gan-yavne": ganYavneAdapter,
+  "givatayim": givatayimAdapter,
   "herzliya": herzliyaAdapter,
   "holon": holonAdapter,
   "kfar-saba": kfarSabaAdapter,
