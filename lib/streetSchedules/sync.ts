@@ -35,6 +35,14 @@ function getServiceClient(): SupabaseClient {
 // reuses every coordinate already resolved and continues from wherever it stopped.
 export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): Promise<SyncResult> {
   const supabase = client ?? getServiceClient();
+  // Stamp the attempt regardless of caller (cron round-robin or a manual CLI run) - otherwise a
+  // manually-synced city's last_attempted_at stays NULL forever, which the round-robin below
+  // treats as "never attempted" and lets it perpetually cut ahead of cities with a real,
+  // unresolved sync error.
+  await supabase
+    .from("city_sync_sources")
+    .update({ last_attempted_at: new Date().toISOString() })
+    .eq("city", adapter.city);
   try {
     const rawRows = await adapter.fetchStreets();
     // A guard against wiping a whole city because the source site changed its markup or was
@@ -114,37 +122,47 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
   }
 }
 
-// Daily cron entry point: refreshes ONE active city per invocation, the least recently
-// attempted one, instead of all cities in a single run. Per-street sources (Rehovot ~605,
-// Rishon ~1000+, Nes Ziona ~244 requests) can't all fit in one serverless execution window,
-// so each city gets its own daily slot in a fair round-robin (ordered by last_attempted_at,
-// so a repeatedly-failing city can't starve the others).
+// Daily cron entry point: refreshes ONE active city per invocation instead of all cities in a
+// single run - per-street sources (Rehovot ~605, Rishon ~1000+, Nes Ziona ~244 requests) can't
+// all fit in one serverless execution window. Picks by priority tier, not a flat oldest-first
+// queue: (1) never-attempted cities first (they deserve an initial try), (2) cities whose last
+// attempt errored - retried on the very next run instead of waiting a full round-robin cycle
+// behind every healthy city, (3) everything else, oldest-attempted first. Sorted client-side
+// (not via .order()) since Postgrest can't express a 3-tier computed priority; the source table
+// is tiny (one row per city) so fetching it whole is cheap.
 export async function syncNextCity(): Promise<SyncResult | null> {
   const supabase = getServiceClient();
   const { data: sources, error } = await supabase
     .from("city_sync_sources")
-    .select("city, adapter_key, last_attempted_at")
-    .eq("status", "active")
-    .order("last_attempted_at", { ascending: true, nullsFirst: true })
-    // Secondary sort: several cities can share last_attempted_at = NULL (activated but never
-    // cron-attempted), and Postgres orders ties arbitrarily — without this a NULL city could be
-    // skipped for days while another NULL city gets re-picked.
-    .order("city", { ascending: true })
-    .limit(1);
+    .select("city, adapter_key, last_attempted_at, last_sync_error")
+    .eq("status", "active");
   if (error) throw error;
-  const source = sources?.[0];
-  if (!source) return null;
+  if (!sources || sources.length === 0) return null;
 
-  await supabase
-    .from("city_sync_sources")
-    .update({ last_attempted_at: new Date().toISOString() })
-    .eq("city", source.city);
+  const priority = (s: { last_attempted_at: string | null; last_sync_error: string | null }) =>
+    s.last_attempted_at === null ? 0 : s.last_sync_error !== null ? 1 : 2;
+  const [source] = [...sources].sort((a, b) => {
+    const diff = priority(a) - priority(b);
+    if (diff !== 0) return diff;
+    if (a.last_attempted_at !== b.last_attempted_at) {
+      return (a.last_attempted_at ?? "").localeCompare(b.last_attempted_at ?? "");
+    }
+    // Final tiebreak (e.g. several cities sharing last_attempted_at = NULL) so ties resolve
+    // deterministically instead of Postgrest/JS sort order leaving one city starved for days.
+    return a.city.localeCompare(b.city);
+  });
 
   const { CITY_ADAPTERS } = await import("./registry");
   const adapter = source.adapter_key ? CITY_ADAPTERS[source.adapter_key] : undefined;
   if (!adapter) {
+    // syncCity is never reached in this branch, so it never gets to stamp last_attempted_at -
+    // do it here instead, otherwise a misconfigured adapter_key would loop-pick this same city
+    // forever instead of yielding to the rest of the queue.
     const message = `No adapter registered for key "${source.adapter_key}"`;
-    await supabase.from("city_sync_sources").update({ last_sync_error: message }).eq("city", source.city);
+    await supabase
+      .from("city_sync_sources")
+      .update({ last_attempted_at: new Date().toISOString(), last_sync_error: message })
+      .eq("city", source.city);
     return { city: source.city, ok: false, rowCount: 0, error: message };
   }
   return syncCity(adapter, supabase);
