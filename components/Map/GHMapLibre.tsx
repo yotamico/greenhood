@@ -52,6 +52,29 @@ function makePinEl(emoji: string, bg: string, imageUrl?: string | null, dimmed?:
   return wrapper;
 }
 
+/* user-position marker — plain pulsing dot while browsing, a forward-pointing arrow while
+   navigating. The arrow doesn't need its own rotation: in nav mode the map bearing itself
+   tracks heading (see the camera-follow effect below), so "up" on screen already means
+   "direction of travel" — the arrow just needs to point up. */
+function userDotHTML(navMode: boolean): string {
+  if (navMode) {
+    return `
+      <div style="position:relative;width:26px;height:26px;">
+        <div style="position:absolute;inset:-4px;border-radius:50%;background:#6B8FA8;opacity:0.2;"></div>
+        <svg width="26" height="26" viewBox="0 0 26 26" style="position:absolute;inset:0;">
+          <path d="M13 2 L21 22 L13 17 L5 22 Z" fill="#6B8FA8" stroke="#2D2A24" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      </div>`;
+  }
+  return `
+    <div style="position:relative;width:22px;height:22px;">
+      <div style="position:absolute;inset:0;border-radius:50%;background:#6B8FA8;
+        opacity:0.25;animation:ghPulse 2s ease-out infinite;transform-origin:center;"></div>
+      <div style="position:absolute;inset:2px;border-radius:50%;background:#6B8FA8;
+        border:2.5px solid #2D2A24;box-shadow:0 0 0 3px white;"></div>
+    </div>`;
+}
+
 function toLineGeoJSON(coords: [number, number][]) {
   return {
     type: "Feature" as const,
@@ -252,25 +275,25 @@ export default function GHMapLibre({
   }, [centerTrigger, userPos, mapLoaded]);
 
   /* ── user dot ── */
+  const navModeRenderedRef = useRef<boolean | null>(null);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !userPos) return;
     const lngLat: maplibregl.LngLatLike = [userPos[1], userPos[0]];
     if (!userMarkerRef.current) {
       const el = document.createElement("div");
-      el.innerHTML = `
-        <div style="position:relative;width:22px;height:22px;">
-          <div style="position:absolute;inset:0;border-radius:50%;background:#6B8FA8;
-            opacity:0.25;animation:ghPulse 2s ease-out infinite;transform-origin:center;"></div>
-          <div style="position:absolute;inset:2px;border-radius:50%;background:#6B8FA8;
-            border:2.5px solid #2D2A24;box-shadow:0 0 0 3px white;"></div>
-        </div>`;
+      el.innerHTML = userDotHTML(navMode);
+      navModeRenderedRef.current = navMode;
       userMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center", pitchAlignment: "viewport", rotationAlignment: "viewport" })
         .setLngLat(lngLat).addTo(map);
     } else {
+      if (navModeRenderedRef.current !== navMode) {
+        userMarkerRef.current.getElement().innerHTML = userDotHTML(navMode);
+        navModeRenderedRef.current = navMode;
+      }
       userMarkerRef.current.setLngLat(lngLat);
     }
-  }, [userPos]);
+  }, [userPos, navMode]);
 
   /* ── destination pin ── */
   useEffect(() => {

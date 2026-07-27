@@ -337,6 +337,7 @@ function MapPageInner() {
   const [navSteps,       setNavSteps]       = useState<OsrmStep[]>([]);
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [heading,        setHeading]        = useState<number | null>(null);
+  const [headingSource,  setHeadingSource]  = useState<string>("אין"); // temp diagnostic — remove once nav rotation is confirmed fixed on-device
   const [showArrivedPopup, setShowArrivedPopup] = useState(false);
   const [routeError,     setRouteError]     = useState<string | null>(null);
   const [rerouting,      setRerouting]      = useState(false);
@@ -365,6 +366,7 @@ function MapPageInner() {
     setNavSteps([]); setCurrentStepIdx(0);
     setShowArrivedPopup(false); arrivedRef.current = false;
     setRouteError(null); setRerouting(false);
+    setHeadingSource("אין");
     router.replace("/map");
   }, [router]);
 
@@ -457,6 +459,7 @@ function MapPageInner() {
           const sm = smoothHeading(smoothedHeadingRef.current, pos.coords.heading);
           smoothedHeadingRef.current = sm;
           setHeading(sm);
+          setHeadingSource("GPS");
         } else if (moved) {
           /* device gives no compass heading (common on foot) — derive bearing from
              movement, but only over a ~15m baseline so GPS wobble doesn't dominate
@@ -470,6 +473,7 @@ function MapPageInner() {
             const sm = smoothHeading(smoothedHeadingRef.current, raw);
             smoothedHeadingRef.current = sm;
             setHeading(sm);
+            setHeadingSource("תנועה");
             headingAnchorRef.current = newPos;
           }
         }
@@ -510,6 +514,7 @@ function MapPageInner() {
       const sm = smoothHeading(smoothedHeadingRef.current, compassHeading);
       smoothedHeadingRef.current = sm;
       setHeading(sm);
+      setHeadingSource("מצפן");
     }
     window.addEventListener("deviceorientationabsolute", handleOrientation);
     window.addEventListener("deviceorientation", handleOrientation);
@@ -827,6 +832,18 @@ function MapPageInner() {
           heading={heading}
         />
       </div>
+
+      {/* ── heading debug badge — temporary, remove once nav rotation is confirmed fixed on-device ── */}
+      {navDest && (
+        <div style={{
+          position: "fixed", top: 10, right: 10, zIndex: 400,
+          background: "rgba(45,42,36,0.75)", color: "white",
+          borderRadius: 8, padding: "3px 8px",
+          fontSize: 11, fontWeight: 600, direction: "rtl",
+        }}>
+          🧭 {heading != null ? `${Math.round(heading)}°` : "—"} ({headingSource})
+        </div>
+      )}
 
       {/* ── GPS error toast ── */}
       {gpsError && (
