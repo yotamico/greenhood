@@ -52,28 +52,13 @@ function makePinEl(emoji: string, bg: string, imageUrl?: string | null, dimmed?:
   return wrapper;
 }
 
-/* user-position marker — plain pulsing dot while browsing, a forward-pointing arrow while
-   navigating. The arrow doesn't need its own rotation: in nav mode the map bearing itself
-   tracks heading (see the camera-follow effect below), so "up" on screen already means
-   "direction of travel" — the arrow just needs to point up. */
-function userDotHTML(navMode: boolean): string {
-  if (navMode) {
-    return `
-      <div style="position:relative;width:26px;height:26px;">
-        <div style="position:absolute;inset:-4px;border-radius:50%;background:#6B8FA8;opacity:0.2;"></div>
-        <svg width="26" height="26" viewBox="0 0 26 26" style="position:absolute;inset:0;">
-          <path d="M13 2 L21 22 L13 17 L5 22 Z" fill="#6B8FA8" stroke="#2D2A24" stroke-width="2" stroke-linejoin="round"/>
-        </svg>
-      </div>`;
-  }
-  return `
-    <div style="position:relative;width:22px;height:22px;">
-      <div style="position:absolute;inset:0;border-radius:50%;background:#6B8FA8;
-        opacity:0.25;animation:ghPulse 2s ease-out infinite;transform-origin:center;"></div>
-      <div style="position:absolute;inset:2px;border-radius:50%;background:#6B8FA8;
-        border:2.5px solid #2D2A24;box-shadow:0 0 0 3px white;"></div>
-    </div>`;
-}
+const USER_DOT_HTML = `
+  <div style="position:relative;width:22px;height:22px;">
+    <div style="position:absolute;inset:0;border-radius:50%;background:#6B8FA8;
+      opacity:0.25;animation:ghPulse 2s ease-out infinite;transform-origin:center;"></div>
+    <div style="position:absolute;inset:2px;border-radius:50%;background:#6B8FA8;
+      border:2.5px solid #2D2A24;box-shadow:0 0 0 3px white;"></div>
+  </div>`;
 
 function toLineGeoJSON(coords: [number, number][]) {
   return {
@@ -91,46 +76,29 @@ interface Item {
   lat: number | null; lng: number | null;
   imageUrl?: string | null;
 }
-interface NavDest { lat: number; lng: number; title: string; }
 
 interface Props {
   userPos:           [number, number] | null;
   items:             Item[];
   onItemClick?:      (id: string) => void;
   selectedItemId?:   string | null;
-  navRoute?:         [number, number][] | null;
-  navDest?:          NavDest | null;
   centerTrigger?:    number;
   clearanceRoute?:   [number, number][];
   clearanceStreets?: [number, number][][];
-  navMode?:          boolean;
-  heading?:          number | null;
 }
 
 export default function GHMapLibre({
   userPos, items, onItemClick, selectedItemId,
-  navRoute, navDest,
   centerTrigger = 0,
   clearanceRoute, clearanceStreets,
-  navMode = false,
-  heading = null,
 }: Props) {
   const containerRef       = useRef<HTMLDivElement>(null);
   const mapRef             = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const userMarkerRef      = useRef<maplibregl.Marker | null>(null);
-  const destMarkerRef      = useRef<maplibregl.Marker | null>(null);
   const itemMarkersRef     = useRef<Map<string, maplibregl.Marker>>(new Map());
   const itemStatusRef      = useRef<Map<string, string>>(new Map());
   const prevTriggerRef     = useRef(0);
-
-  /* nav-mode camera: target (latest fix, look-ahead applied) vs. rendered (eased every frame) */
-  type CameraPose = { lat: number; lng: number; heading: number; zoom: number; pitch: number };
-  const targetRef       = useRef<CameraPose | null>(null);
-  const renderedRef      = useRef<CameraPose | null>(null);
-  const rafIdRef          = useRef<number | null>(null);
-  const lastFrameTsRef    = useRef<number | null>(null);
-  const manualFlyActiveRef = useRef(false);
 
   /* ── init ── */
   useEffect(() => {
@@ -140,29 +108,11 @@ export default function GHMapLibre({
       style: CARTO_STYLE,
       center: userPos ? [userPos[1], userPos[0]] : NES_ZIONA,
       zoom: 15,
-      pitch: 0,
-      bearing: 0,
       attributionControl: false,
     });
     mapRef.current = map;
 
-    /* pause the nav-mode auto-follow loop the instant the user touches the map — drag, pinch-zoom
-       and scroll-zoom all fire "movestart" with `originalEvent` set (unlike our own programmatic
-       jumpTo/flyTo calls, where it's undefined), so this cleanly tells user gestures apart from
-       the camera-follow loop itself. Stays paused until the user taps "locate me" again — matching
-       Waze/Google Maps, which don't fight a manual pan by snapping straight back. */
-    map.on("movestart", (e) => {
-      if (e.originalEvent) manualFlyActiveRef.current = true;
-    });
-
     map.on("load", () => {
-      /* navigation route */
-      map.addSource("nav-route", { type: "geojson", data: toLineGeoJSON([]) });
-      map.addLayer({ id: "nav-route-shadow", type: "line", source: "nav-route",
-        paint: { "line-color": "#2D2A24", "line-width": 10, "line-opacity": 0.15 } });
-      map.addLayer({ id: "nav-route-line",   type: "line", source: "nav-route",
-        paint: { "line-color": "#6B9956",   "line-width": 6,  "line-opacity": 0.95 } });
-
       /* clearance route (item-based) */
       map.addSource("clearance-route", { type: "geojson", data: toLineGeoJSON([]) });
       map.addLayer({ id: "clearance-route-line", type: "line", source: "clearance-route",
@@ -183,128 +133,34 @@ export default function GHMapLibre({
       itemMarkersRef.current.forEach(m => m.remove());
       itemMarkersRef.current.clear();
       userMarkerRef.current?.remove();
-      destMarkerRef.current?.remove();
       map.remove();
       mapRef.current = null;
     };
   }, []); // eslint-disable-line
 
-  /* ── nav mode: follow user with heading ──
-     Look-ahead is kept modest (60m, was 150m) because any residual noise in the heading
-     estimate gets amplified by this distance into a screen-space camera jump. The look-ahead
-     point is written to `targetRef` only — the rAF loop below eases toward it every frame,
-     so that noise gets damped continuously instead of producing one discrete easeTo per raw
-     GPS tick (which is what caused the visible jitter/jumps). */
-  useEffect(() => {
-    if (!navMode || !userPos) return;
-    let [lat, lng] = userPos;
-    if (heading != null) {
-      const rad = heading * Math.PI / 180;
-      lat += (60 / 111320) * Math.cos(rad);
-      lng += (60 / (111320 * Math.cos(userPos[0] * Math.PI / 180))) * Math.sin(rad);
-    }
-    targetRef.current = { lat, lng, heading: heading ?? 0, zoom: 17, pitch: 50 };
-  }, [userPos, heading, navMode]);
-
-  /* ── nav mode: continuous camera glide ──
-     Runs a requestAnimationFrame loop for the duration of nav mode, exponentially easing the
-     rendered camera pose toward `targetRef` every frame via map.jumpTo (not easeTo — the loop
-     itself already performs the easing, so calling easeTo here as well would double-ease
-     against a moving target and reintroduce the same jitter this replaces). This decouples
-     visual smoothness from the GPS fixes' irregular arrival timing. */
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapLoaded || !navMode) {
-      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-      renderedRef.current = null; // re-seed from the live camera next time nav mode starts
-      lastFrameTsRef.current = null;
-      return;
-    }
-    manualFlyActiveRef.current = false; // fresh start each time nav mode begins — don't inherit a pause from before nav started
-    const TAU_MS = 280; // smoothing time constant — smaller = snappier, larger = smoother/laggier
-    function tick(ts: number) {
-      const map = mapRef.current;
-      if (!map) return;
-      if (!renderedRef.current) {
-        const c = map.getCenter();
-        renderedRef.current = { lat: c.lat, lng: c.lng, heading: -map.getBearing(), zoom: map.getZoom(), pitch: map.getPitch() };
-      }
-      const target = targetRef.current;
-      if (target && !manualFlyActiveRef.current) {
-        const dt = lastFrameTsRef.current != null ? ts - lastFrameTsRef.current : 16;
-        const f = 1 - Math.exp(-dt / TAU_MS);
-        const r = renderedRef.current;
-        r.lat   += (target.lat - r.lat) * f;
-        r.lng   += (target.lng - r.lng) * f;
-        r.zoom  += (target.zoom - r.zoom) * f;
-        r.pitch += (target.pitch - r.pitch) * f;
-        const diff = ((target.heading - r.heading + 540) % 360) - 180; // shortest signed delta
-        r.heading = (r.heading + diff * f + 360) % 360;
-        map.jumpTo({ center: [r.lng, r.lat], zoom: r.zoom, pitch: r.pitch, bearing: -r.heading });
-      }
-      lastFrameTsRef.current = ts;
-      rafIdRef.current = requestAnimationFrame(tick);
-    }
-    rafIdRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafIdRef.current != null) cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    };
-  }, [navMode, mapLoaded]);
-
-  /* ── reset pitch/bearing when leaving nav mode ── */
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapLoaded || navMode) return;
-    map.easeTo({ pitch: 0, bearing: 0, duration: 500 });
-  }, [navMode, mapLoaded]);
-
-  /* ── center on user (locate-me button) ──
-     During nav mode the rAF loop above runs at 60fps and would override this flyTo within a
-     single frame — manualFlyActiveRef pauses that loop for the duration of the flyTo so the
-     locate-me tap is actually visible before the live-follow camera resumes. */
+  /* ── center on user (locate-me button) ── */
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !userPos) return;
     if (centerTrigger === 0 || centerTrigger === prevTriggerRef.current) return;
     prevTriggerRef.current = centerTrigger;
-    manualFlyActiveRef.current = true;
-    map.once("moveend", () => { manualFlyActiveRef.current = false; });
     map.flyTo({ center: [userPos[1], userPos[0]], zoom: 16, duration: 1100 });
   }, [centerTrigger, userPos, mapLoaded]);
 
   /* ── user dot ── */
-  const navModeRenderedRef = useRef<boolean | null>(null);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !userPos) return;
     const lngLat: maplibregl.LngLatLike = [userPos[1], userPos[0]];
     if (!userMarkerRef.current) {
       const el = document.createElement("div");
-      el.innerHTML = userDotHTML(navMode);
-      navModeRenderedRef.current = navMode;
+      el.innerHTML = USER_DOT_HTML;
       userMarkerRef.current = new maplibregl.Marker({ element: el, anchor: "center", pitchAlignment: "viewport", rotationAlignment: "viewport" })
         .setLngLat(lngLat).addTo(map);
     } else {
-      if (navModeRenderedRef.current !== navMode) {
-        userMarkerRef.current.getElement().innerHTML = userDotHTML(navMode);
-        navModeRenderedRef.current = navMode;
-      }
       userMarkerRef.current.setLngLat(lngLat);
     }
-  }, [userPos, navMode]);
-
-  /* ── destination pin ── */
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    destMarkerRef.current?.remove();
-    destMarkerRef.current = null;
-    if (!navDest) return;
-    destMarkerRef.current = new maplibregl.Marker({ element: makePinEl("🎯", "#FFB347"), anchor: "bottom", offset: [0, -9], pitchAlignment: "viewport", rotationAlignment: "viewport" })
-      .setLngLat([navDest.lng, navDest.lat]).addTo(map);
-  }, [navDest]);
+  }, [userPos]);
 
   /* ── item pins ── */
   useEffect(() => {
@@ -314,8 +170,6 @@ export default function GHMapLibre({
     const newIds = new Set(items.map(it => it.id));
 
     existing.forEach((m, id) => { if (!newIds.has(id)) { m.remove(); existing.delete(id); itemStatusRef.current.delete(id); } });
-
-    if (navMode) { existing.forEach(m => m.remove()); existing.clear(); itemStatusRef.current.clear(); return; }
 
     items
       .filter(it => it.lat != null && it.lng != null)
@@ -337,14 +191,7 @@ export default function GHMapLibre({
         itemStatusRef.current.set(it.id, it.status ?? "active");
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, navMode]);
-
-  /* ── nav route ── */
-  useEffect(() => {
-    if (!mapLoaded) return;
-    (mapRef.current?.getSource("nav-route") as maplibregl.GeoJSONSource | undefined)
-      ?.setData(toLineGeoJSON(navRoute ?? []));
-  }, [navRoute, mapLoaded]);
+  }, [items]);
 
   /* ── clearance route ── */
   useEffect(() => {

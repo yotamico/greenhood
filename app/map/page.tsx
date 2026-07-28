@@ -76,17 +76,14 @@ function snapTo(pct: number) {
   return HIDDEN;
 }
 
-interface NavDest { lat: number; lng: number; title: string; }
+interface PendingNavTarget { lat: number; lng: number; title: string; }
 
-interface OsrmStep {
-  name: string;
-  distance: number;
-  duration: number;
-  maneuver: {
-    type: string;
-    modifier?: string;
-    location: [number, number]; // [lng, lat]
-  };
+/* opens the destination directly in the user's chosen navigation app */
+function openNavApp(app: "waze" | "google", lat: number, lng: number) {
+  const url = app === "waze"
+    ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
+    : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=walking`;
+  window.location.href = url;
 }
 
 function haversine([lat1, lng1]: [number,number], [lat2, lng2]: [number,number]): number {
@@ -95,55 +92,6 @@ function haversine([lat1, lng1]: [number,number], [lat2, lng2]: [number,number])
   const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/* local flat-earth projection (metres) — good enough for short off-route distance checks */
-function projectMeters(base: [number,number], p: [number,number]): [number,number] {
-  const metersPerDegLat = 111320;
-  const metersPerDegLng = 111320 * Math.cos(base[0] * Math.PI / 180);
-  return [(p[1] - base[1]) * metersPerDegLng, (p[0] - base[0]) * metersPerDegLat];
-}
-
-function pointToSegmentMeters(p: [number,number], a: [number,number], b: [number,number]): number {
-  const P = projectMeters(a, p);
-  const B = projectMeters(a, b);
-  const lenSq = B[0]*B[0] + B[1]*B[1];
-  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, (P[0]*B[0] + P[1]*B[1]) / lenSq));
-  const dx = P[0] - t*B[0], dy = P[1] - t*B[1];
-  return Math.sqrt(dx*dx + dy*dy);
-}
-
-/* min distance (metres) from a point to a polyline — used for off-route detection */
-function minDistanceToRouteMeters(p: [number,number], route: [number,number][]): number {
-  if (route.length === 0) return Infinity;
-  if (route.length === 1) return haversine(p, route[0]);
-  let min = Infinity;
-  for (let i = 0; i < route.length - 1; i++) {
-    const d = pointToSegmentMeters(p, route[i], route[i+1]);
-    if (d < min) min = d;
-  }
-  return min;
-}
-
-const MANEUVER_HE: Record<string,string> = {
-  "left": "פנה שמאלה", "slight left": "פנה מעט שמאלה", "sharp left": "פנה חדות שמאלה",
-  "right": "פנה ימינה", "slight right": "פנה מעט ימינה", "sharp right": "פנה חדות ימינה",
-  "uturn": "בצע פניית פרסה", "straight": "המשך ישר",
-};
-
-function maneuverText(step: OsrmStep | null): string {
-  if (!step) return "";
-  if (step.maneuver.type === "arrive") return "הגעת ליעד";
-  const base = MANEUVER_HE[step.maneuver.modifier ?? ""] ?? "המשך ישר";
-  return step.name ? `${base}, אל ${step.name}` : base;
-}
-
-/* circular exponential smoothing — prevents the camera from snapping when a single
-   noisy GPS-derived heading estimate swings far from the recent trend */
-function smoothHeading(prev: number | null, next: number): number {
-  if (prev == null) return next;
-  const diff = ((next - prev + 540) % 360) - 180; // shortest signed delta, range [-180,180]
-  return (prev + diff * 0.3 + 360) % 360;
 }
 
 /* GPS fix quality gate — rejects noisy/implausible fixes (poor accuracy circle, or a
@@ -170,39 +118,6 @@ function shouldAcceptFix(
   }
   if (!badAccuracy && !implausible) return true;
   return now - lastGoodFixAt > STALE_FIX_TIMEOUT_MS;
-}
-
-function speak(text: string) {
-  if (typeof window === "undefined" || !("speechSynthesis" in window) || !text) return;
-  window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = "he-IL";
-  utter.rate = 1;
-  window.speechSynthesis.speak(utter);
-}
-
-function TurnArrow({ type, modifier }: { type?: string; modifier?: string }) {
-  if (type === "arrive") return <span style={{ fontSize: 32, lineHeight: 1 }}>🎯</span>;
-  const deg: Record<string, number> = {
-    "left": -90, "slight left": -45, "sharp left": -130,
-    "right": 90, "slight right": 45, "sharp right": 130,
-    "uturn": 180,
-  };
-  const rotation = deg[modifier ?? ""] ?? 0;
-  return (
-    <svg width={40} height={40} viewBox="0 0 40 40"
-      style={{ transform: `rotate(${rotation}deg)`, display: "block" }}>
-      <polygon points="20,4 32,34 20,26 8,34" fill="white" />
-    </svg>
-  );
-}
-
-function fmtDist(m: number) {
-  return m < 1000 ? `${Math.round(m)} מ'` : `${(m / 1000).toFixed(1)} ק"מ`;
-}
-function fmtDur(s: number) {
-  const m = Math.round(s / 60);
-  return m < 60 ? `${m} דק'` : `${Math.floor(m / 60)} ש' ${m % 60} דק'`;
 }
 
 /* ─────────────────────────────────────────────────────────── */
@@ -275,7 +190,6 @@ function MapPageInner() {
   const hasInitialCentered  = useRef(false);
   const lastInteractTimeRef = useRef(0);
   const userPosRef          = useRef<[number,number] | null>(null);
-  const navDestRef          = useRef<NavDest | null>(null);
   userPosRef.current  = userPos;
 
   /* initial auto-center — fires once when position first arrives */
@@ -330,45 +244,32 @@ function MapPageInner() {
     ).then(setStreetSchedule);
   }, [activeCity]);
 
-  /* navigation mode */
-  const [navDest,        setNavDest]        = useState<NavDest | null>(null);
-  const [navRoute,       setNavRoute]       = useState<[number,number][] | null>(null);
-  const [navInfo,        setNavInfo]        = useState<{ dist: number; dur: number } | null>(null);
-  const [navSteps,       setNavSteps]       = useState<OsrmStep[]>([]);
-  const [currentStepIdx, setCurrentStepIdx] = useState(0);
-  const [heading,        setHeading]        = useState<number | null>(null);
-  const [headingSource,  setHeadingSource]  = useState<string>("אין"); // temp diagnostic — remove once nav rotation is confirmed fixed on-device
-  const [showArrivedPopup, setShowArrivedPopup] = useState(false);
-  const [routeError,     setRouteError]     = useState<string | null>(null);
-  const [rerouting,      setRerouting]      = useState(false);
-  const [voiceEnabled,   setVoiceEnabled]   = useState(false);
-  const [gpsError,       setGpsError]       = useState<string | null>(null);
+  /* geolocation */
+  const [gpsError, setGpsError] = useState<string | null>(null);
   const prevPosRef = useRef<[number,number] | null>(null);
   const prevPosTimeRef = useRef<number | null>(null);
   const lastGoodFixAtRef = useRef<number | null>(null);
-  const smoothedHeadingRef = useRef<number | null>(null);
-  const headingAnchorRef = useRef<[number,number] | null>(null);
-  const orientationAvailableRef = useRef(false);
-  const lastOrientationAtRef = useRef(0);
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-  const arrivedRef = useRef(false);
-  /* dedup ref — tracks which destination we already fetched a route for */
-  const routeDestRef = useRef<string | null>(null);
-  const lastRerouteAtRef = useRef(0);
-  const fetchAbortRef = useRef<AbortController | null>(null);
-  const announcedRef = useRef<{ stepIdx: number; far: boolean; near: boolean }>({ stepIdx: -1, far: false, near: false });
-  navDestRef.current = navDest;
 
-  const endNavigation = useCallback(() => {
-    fetchAbortRef.current?.abort();
-    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
-    setNavDest(null); setNavRoute(null); setNavInfo(null);
-    setNavSteps([]); setCurrentStepIdx(0);
-    setShowArrivedPopup(false); arrivedRef.current = false;
-    setRouteError(null); setRerouting(false);
-    setHeadingSource("אין");
-    router.replace("/map");
-  }, [router]);
+  /* navigation — hands off to Waze/Google Maps rather than an in-app turn-by-turn engine.
+     `pendingNavTarget` just holds the destination while the app-choice sheet is open. */
+  const [pendingNavTarget, setPendingNavTarget] = useState<PendingNavTarget | null>(null);
+  const [rememberNavApp,   setRememberNavApp]   = useState(false);
+
+  const startNav = useCallback((lat: number, lng: number, title: string) => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem("navAppPref") : null;
+    if (saved === "waze" || saved === "google") {
+      openNavApp(saved, lat, lng);
+      return;
+    }
+    setPendingNavTarget({ lat, lng, title });
+  }, []);
+
+  const chooseNavApp = useCallback((app: "waze" | "google") => {
+    if (rememberNavApp) localStorage.setItem("navAppPref", app);
+    const target = pendingNavTarget;
+    setPendingNavTarget(null);
+    if (target) openNavApp(app, target.lat, target.lng);
+  }, [rememberNavApp, pendingNavTarget]);
 
   /* compute scheduled streets from street_schedules (Supabase) */
   const streetModeHebrewDay = useMemo(() => {
@@ -429,11 +330,11 @@ function MapPageInner() {
     }
   }, []);
 
-  /* geolocation — watch position for live navigation.
+  /* geolocation — watch position so the map can show a live blue dot while browsing.
      Throttle: skip state update if moved less than 8m (prevents re-renders while stationary). */
   useEffect(() => {
     if (!navigator.geolocation) {
-      setGpsError("הדפדפן הזה לא תומך באיתור מיקום — הניווט יעבוד ממיקום ברירת מחדל");
+      setGpsError("הדפדפן הזה לא תומך באיתור מיקום — מוצג מיקום ברירת מחדל");
       setUserPos([31.9297, 34.8307]);
       return;
     }
@@ -445,7 +346,7 @@ function MapPageInner() {
         const prev = prevPosRef.current;
         const now = Date.now();
         if (!shouldAcceptFix(newPos, pos.coords.accuracy ?? null, prev, prevPosTimeRef.current, now, lastGoodFixAtRef.current)) {
-          return; // noisy or implausible fix — drop it entirely, don't touch position/heading state
+          return; // noisy or implausible fix — drop it entirely
         }
         lastGoodFixAtRef.current = now;
         prevPosTimeRef.current = now;
@@ -453,37 +354,13 @@ function MapPageInner() {
           || Math.abs(newPos[0] - prev[0]) > MIN_DELTA
           || Math.abs(newPos[1] - prev[1]) > MIN_DELTA;
         if (moved) setUserPos(newPos);
-        if (orientationAvailableRef.current && Date.now() - lastOrientationAtRef.current < 2000) {
-          /* compass is driving heading — GPS-derived heading below is skipped to avoid two sources fighting */
-        } else if (pos.coords.heading != null && !isNaN(pos.coords.heading)) {
-          const sm = smoothHeading(smoothedHeadingRef.current, pos.coords.heading);
-          smoothedHeadingRef.current = sm;
-          setHeading(sm);
-          setHeadingSource("GPS");
-        } else if (moved) {
-          /* device gives no compass heading (common on foot) — derive bearing from
-             movement, but only over a ~15m baseline so GPS wobble doesn't dominate
-             the angle, then smooth on top so a single bad fix can't snap the camera */
-          const anchor = headingAnchorRef.current;
-          if (!anchor) {
-            headingAnchorRef.current = newPos;
-          } else if (haversine(anchor, newPos) >= 15) {
-            const dx = newPos[1] - anchor[1], dy = newPos[0] - anchor[0];
-            const raw = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
-            const sm = smoothHeading(smoothedHeadingRef.current, raw);
-            smoothedHeadingRef.current = sm;
-            setHeading(sm);
-            setHeadingSource("תנועה");
-            headingAnchorRef.current = newPos;
-          }
-        }
         prevPosRef.current = newPos;
       },
       (err) => {
         setGpsError(
           err.code === err.PERMISSION_DENIED
             ? "לא הצלחנו לאתר את המיקום שלך — יש לאשר הרשאת מיקום בדפדפן. מוצג מיקום ברירת מחדל"
-            : "תקלה זמנית באיתור המיקום — הניווט עשוי להיות לא מדויק"
+            : "תקלה זמנית באיתור המיקום"
         );
         setUserPos(prev => prev ?? [31.9297, 34.8307]);
       },
@@ -492,215 +369,17 @@ function MapPageInner() {
     return () => navigator.geolocation.clearWatch(id);
   }, []);
 
-  /* device compass heading — primary heading source during active navigation.
-     Android Chrome fires "deviceorientationabsolute" without a permission prompt;
-     iOS Safari needs "deviceorientation" + webkitCompassHeading (and, on iOS 13+, an explicit
-     DeviceOrientationEvent.requestPermission() call from a user gesture — handled in onNavigate,
-     not here, since this effect isn't triggered by one). Feeds the same smoothHeading() pipeline
-     the GPS-derived fallback uses, so there's a single smoothing path either way. */
-  useEffect(() => {
-    if (!navDest || typeof window === "undefined") return;
-    function handleOrientation(e: Event) {
-      const evt = e as DeviceOrientationEvent & { webkitCompassHeading?: number };
-      let compassHeading: number | null = null;
-      if (evt.webkitCompassHeading != null && !isNaN(evt.webkitCompassHeading)) {
-        compassHeading = evt.webkitCompassHeading;
-      } else if (evt.absolute && evt.alpha != null) {
-        compassHeading = (360 - evt.alpha) % 360;
-      }
-      if (compassHeading == null || isNaN(compassHeading)) return;
-      lastOrientationAtRef.current = Date.now();
-      orientationAvailableRef.current = true;
-      const sm = smoothHeading(smoothedHeadingRef.current, compassHeading);
-      smoothedHeadingRef.current = sm;
-      setHeading(sm);
-      setHeadingSource("מצפן");
-    }
-    window.addEventListener("deviceorientationabsolute", handleOrientation);
-    window.addEventListener("deviceorientation", handleOrientation);
-    return () => {
-      window.removeEventListener("deviceorientationabsolute", handleOrientation);
-      window.removeEventListener("deviceorientation", handleOrientation);
-      orientationAvailableRef.current = false;
-    };
-  }, [navDest]);
-
-  /* keep the screen awake during active navigation — the Screen Wake Lock spec releases the
-     lock automatically when the tab is backgrounded and does NOT reacquire it on return, so
-     the visibilitychange listener below is required, not optional polish. */
-  useEffect(() => {
-    if (!navDest || !("wakeLock" in navigator)) return;
-    let cancelled = false;
-    navigator.wakeLock.request("screen")
-      .then(sentinel => {
-        if (cancelled) { sentinel.release().catch(() => {}); return; }
-        wakeLockRef.current = sentinel;
-      })
-      .catch(() => {}); // denial (e.g. low battery mode) is non-fatal
-
-    function onVisible() {
-      if (document.visibilityState === "visible" && !wakeLockRef.current) {
-        navigator.wakeLock.request("screen").then(s => { wakeLockRef.current = s; }).catch(() => {});
-      }
-    }
-    document.addEventListener("visibilitychange", onVisible);
-
-    return () => {
-      cancelled = true;
-      document.removeEventListener("visibilitychange", onVisible);
-      wakeLockRef.current?.release().catch(() => {});
-      wakeLockRef.current = null;
-    };
-  }, [navDest]);
-
-  /* react to nav params — runs on mount AND whenever URL changes */
+  /* nav_lat/nav_lng/nav_title in the URL (set by the item detail page's "נווט" button) —
+     hand off to the external nav app, then clear the params so it doesn't refire. */
   useEffect(() => {
     const lat   = searchParams.get("nav_lat");
     const lng   = searchParams.get("nav_lng");
     const title = searchParams.get("nav_title") ?? "יעד";
     if (lat && lng) {
-      routeDestRef.current = null;
-      setNavRoute(null);
-      setNavInfo(null);
-      setNavSteps([]);
-      setCurrentStepIdx(0);
-      setRouteError(null);
-      setRerouting(false);
-      setNavDest({ lat: parseFloat(lat), lng: parseFloat(lng), title });
-      setSheetPct(HIDDEN);
-      setShowArrivedPopup(false);
-      arrivedRef.current = false;
-    } else {
-      routeDestRef.current = null;
-      setNavDest(null);
-      setNavRoute(null);
-      setNavInfo(null);
-      setNavSteps([]);
-      setCurrentStepIdx(0);
-      setRouteError(null);
-      setRerouting(false);
-      setShowArrivedPopup(false);
-      arrivedRef.current = false;
+      startNav(parseFloat(lat), parseFloat(lng), title);
+      router.replace("/map");
     }
-  }, [searchParams]);
-
-  /* pop "arrived" the moment the user gets within 20m of the nav destination */
-  useEffect(() => {
-    if (!navDest || !userPos || arrivedRef.current) return;
-    if (haversine(userPos, [navDest.lat, navDest.lng]) <= 20) {
-      arrivedRef.current = true;
-      setShowArrivedPopup(true);
-      if (voiceEnabled) speak("הגעת ליעד");
-    }
-  }, [userPos, navDest, voiceEnabled]);
-
-  /* fetches (or re-fetches) the OSRM route from `origin` to `dest`.
-     `isReroute` just controls the "מנתב מחדש…" indicator vs. the initial "מחשב מסלול…" one. */
-  const fetchRoute = useCallback((origin: [number,number], dest: NavDest, isReroute: boolean) => {
-    fetchAbortRef.current?.abort();
-    const controller = new AbortController();
-    fetchAbortRef.current = controller;
-    routeDestRef.current = `${dest.lat.toFixed(5)},${dest.lng.toFixed(5)}`;
-    setRouteError(null);
-    if (isReroute) setRerouting(true);
-    const [oLat, oLng] = origin;
-    fetch(
-      `/api/route?oLat=${oLat}&oLng=${oLng}&dLat=${dest.lat}&dLng=${dest.lng}`,
-      { signal: controller.signal }
-    )
-      .then(r => {
-        if (!r.ok) throw new Error(`osrm http ${r.status}`);
-        return r.json();
-      })
-      .then(d => {
-        const route = d.routes?.[0];
-        if (!route) {
-          routeDestRef.current = null;
-          setRouteError("לא נמצא מסלול ליעד הזה");
-          return;
-        }
-        const coords: [number,number][] = route.geometry.coordinates.map(
-          ([lng, lat]: [number, number]) => [lat, lng] as [number, number]
-        );
-        setNavRoute(coords);
-        setNavInfo({ dist: route.distance, dur: route.duration });
-        const steps: OsrmStep[] = route.legs?.[0]?.steps ?? [];
-        setNavSteps(steps);
-        const firstReal = steps.findIndex(s => s.maneuver.type !== "depart");
-        setCurrentStepIdx(firstReal > 0 ? firstReal : 0);
-      })
-      .catch(err => {
-        if (err.name === "AbortError") return;
-        routeDestRef.current = null;
-        setRouteError("לא הצלחנו לחשב מסלול. בדוק/י את החיבור לאינטרנט ונסה/י שוב");
-      })
-      .finally(() => setRerouting(false));
-  }, []);
-
-  /* initial route fetch (when destination is set/changed), plus off-route detection
-     that triggers a live reroute — only when the user actually strays from the path
-     (not on every GPS tick), with a cooldown so we don't hammer the OSRM demo server. */
-  const OFF_ROUTE_METERS = 40;
-  const REROUTE_COOLDOWN_MS = 8000;
-  useEffect(() => {
-    if (!navDest || !userPos) return;
-    const key = `${navDest.lat.toFixed(5)},${navDest.lng.toFixed(5)}`;
-    if (routeDestRef.current !== key) {
-      fetchRoute(userPos, navDest, false);
-      return;
-    }
-    if (navRoute && navRoute.length > 1) {
-      const now = Date.now();
-      if (
-        minDistanceToRouteMeters(userPos, navRoute) > OFF_ROUTE_METERS &&
-        now - lastRerouteAtRef.current > REROUTE_COOLDOWN_MS
-      ) {
-        lastRerouteAtRef.current = now;
-        fetchRoute(userPos, navDest, true);
-      }
-    }
-  }, [navDest, userPos, navRoute, fetchRoute]);
-
-  const retryRoute = useCallback(() => {
-    if (!navDest || !userPos) return;
-    lastRerouteAtRef.current = Date.now();
-    fetchRoute(userPos, navDest, false);
-  }, [navDest, userPos, fetchRoute]);
-
-  /* advance nav step when user reaches the maneuver point */
-  useEffect(() => {
-    if (!userPos || !navSteps.length || currentStepIdx >= navSteps.length) return;
-    const step = navSteps[currentStepIdx];
-    const stepPos: [number,number] = [step.maneuver.location[1], step.maneuver.location[0]];
-    if (haversine(userPos, stepPos) < 40) {
-      setCurrentStepIdx(i => Math.min(i + 1, navSteps.length - 1));
-    }
-  }, [userPos, navSteps, currentStepIdx]);
-
-  /* current nav step + distance to its maneuver point */
-  const currentStep = navSteps[currentStepIdx] ?? null;
-  const distToStep = useMemo(() => {
-    if (!userPos || !currentStep) return 0;
-    const stepPos: [number,number] = [currentStep.maneuver.location[1], currentStep.maneuver.location[0]];
-    return haversine(userPos, stepPos);
-  }, [userPos, currentStep]);
-
-  /* opt-in voice guidance — announces each maneuver once ~150m ahead, and again on approach */
-  useEffect(() => {
-    if (!voiceEnabled || !currentStep) return;
-    if (announcedRef.current.stepIdx !== currentStepIdx) {
-      announcedRef.current = { stepIdx: currentStepIdx, far: false, near: false };
-    }
-    const a = announcedRef.current;
-    if (!a.far && distToStep <= 150) {
-      a.far = true;
-      const roundedDist = Math.round(distToStep / 10) * 10;
-      speak(roundedDist > 30 ? `בעוד ${roundedDist} מטר, ${maneuverText(currentStep)}` : maneuverText(currentStep));
-    } else if (!a.near && distToStep <= 30) {
-      a.near = true;
-      speak(maneuverText(currentStep));
-    }
-  }, [distToStep, currentStepIdx, currentStep, voiceEnabled]);
+  }, [searchParams, startNav, router]);
 
   /* fetch items */
   useEffect(() => {
@@ -775,21 +454,9 @@ function MapPageInner() {
   }, []);
 
   const onNavigate = useCallback((lat: number, lng: number, title: string) => {
-    /* iOS 13+ only grants compass access from within a synchronous user gesture — this click is
-       the only place we have one during navigation start, so ask here (no-op elsewhere/Android) */
-    const RequestPermission = (window as unknown as { DeviceOrientationEvent?: { requestPermission?: () => Promise<string> } }).DeviceOrientationEvent?.requestPermission;
-    if (typeof RequestPermission === "function") RequestPermission().catch(() => {});
     setExpandedId(null);
-    routeDestRef.current = null;
-    setNavRoute(null);
-    setNavInfo(null);
-    setNavSteps([]);
-    setCurrentStepIdx(0);
-    setRouteError(null);
-    setRerouting(false);
-    setNavDest({ lat, lng, title });
-    setSheetPct(HIDDEN);
-  }, []);
+    startNav(lat, lng, title);
+  }, [startNav]);
   const hasActiveItems = useMemo(() => displayed.some(it => it.status === "active"), [displayed]);
 
   function toggleClearance() {
@@ -823,25 +490,59 @@ function MapPageInner() {
           items={mapItems}
           onItemClick={onItemClick}
           selectedItemId={expandedId}
-          navRoute={navRoute}
-          navDest={navDest}
           centerTrigger={centerTrigger}
           clearanceRoute={clearanceRoute}
           clearanceStreets={clearanceStreets}
-          navMode={!!navDest}
-          heading={heading}
         />
       </div>
 
-      {/* ── heading debug badge — temporary, remove once nav rotation is confirmed fixed on-device ── */}
-      {navDest && (
-        <div style={{
-          position: "fixed", top: 10, right: 10, zIndex: 400,
-          background: "rgba(45,42,36,0.75)", color: "white",
-          borderRadius: 8, padding: "3px 8px",
-          fontSize: 11, fontWeight: 600, direction: "rtl",
-        }}>
-          🧭 {heading != null ? `${Math.round(heading)}°` : "—"} ({headingSource})
+      {/* ── nav app chooser — shown before handing off to Waze/Google Maps, unless a default is remembered ── */}
+      {pendingNavTarget && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 500,
+            background: "rgba(45,42,36,0.55)",
+            display: "flex", alignItems: "flex-end", justifyContent: "center",
+          }}
+          onClick={() => setPendingNavTarget(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%", maxWidth: 420,
+              background: "var(--paper)", borderRadius: "20px 20px 0 0",
+              border: "2px solid var(--ink)", borderBottom: "none",
+              padding: "20px 20px 28px", direction: "rtl",
+            }}
+          >
+            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 18, marginBottom: 4 }}>
+              ניווט אל {pendingNavTarget.title}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--muted)", fontWeight: 600, marginBottom: 16 }}>
+              באיזו אפליקציה לפתוח את הניווט?
+            </div>
+            <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+              <button onClick={() => chooseNavApp("waze")} style={{
+                flex: 1, padding: "14px 8px", borderRadius: 14,
+                border: "2px solid var(--ink)", background: "#33CCFF", color: "#1a1a1a",
+                fontWeight: 800, fontSize: 15, cursor: "pointer",
+              }}>🚗 Waze</button>
+              <button onClick={() => chooseNavApp("google")} style={{
+                flex: 1, padding: "14px 8px", borderRadius: 14,
+                border: "2px solid var(--ink)", background: "#4285F4", color: "white",
+                fontWeight: 800, fontSize: 15, cursor: "pointer",
+              }}>📍 גוגל מפות</button>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              <input type="checkbox" checked={rememberNavApp} onChange={(e) => setRememberNavApp(e.target.checked)} />
+              זכור עבורי לפעם הבאה
+            </label>
+            <button onClick={() => setPendingNavTarget(null)} style={{
+              width: "100%", marginTop: 14, padding: "10px", borderRadius: 12,
+              border: "none", background: "transparent", color: "var(--muted)",
+              fontWeight: 700, fontSize: 13, cursor: "pointer",
+            }}>ביטול</button>
+          </div>
         </div>
       )}
 
@@ -867,140 +568,11 @@ function MapPageInner() {
         </div>
       )}
 
-      {/* ── Arrived at destination popup ── */}
-      {showArrivedPopup && navDest && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 200,
-          background: "rgba(45,42,36,0.6)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: 20,
-        }}>
-          <div style={{
-            background: "var(--surface)", border: "2.5px solid var(--ink)",
-            borderRadius: 20, boxShadow: "var(--sh-md)",
-            padding: "30px 24px 24px", maxWidth: 320, width: "100%",
-            textAlign: "center", direction: "rtl",
-          }}>
-            <div style={{ fontSize: 48, marginBottom: 10 }}>🎉</div>
-            <div style={{ fontFamily: "var(--font-display)", fontWeight: 900, fontSize: 22, marginBottom: 6 }}>
-              הגעת ליעד!
-            </div>
-            <div style={{ fontSize: 14, color: "var(--muted)", fontWeight: 600, marginBottom: 22 }}>
-              {navDest.title}
-            </div>
-            <button onClick={endNavigation} style={{
-              width: "100%", height: 50,
-              background: "var(--primary)", color: "var(--ink)",
-              border: "2px solid var(--ink)", borderRadius: "var(--r-md)",
-              fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 16,
-              cursor: "pointer", boxShadow: "var(--sh-md)",
-            }}>סיימתי</button>
-          </div>
-        </div>
-      )}
-
-      {/* ── TOP BAR ── */}
+      {/* ── TOP BAR — search + filter bar ── */}
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0,
         zIndex: 10,
       }}>
-        {navDest ? (
-          /* ── Waze-style navigation banner ── */
-          <div style={{
-            background: "#16213E",
-            color: "white",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
-            direction: "rtl",
-          }}>
-            {/* Main instruction row */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 12,
-              padding: "12px 16px 8px",
-            }}>
-              {/* Turn arrow box */}
-              <div style={{
-                width: 58, height: 58, flexShrink: 0,
-                background: "rgba(255,255,255,0.1)",
-                borderRadius: 14,
-                border: "1.5px solid rgba(255,255,255,0.2)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <TurnArrow
-                  type={currentStep?.maneuver.type}
-                  modifier={currentStep?.maneuver.modifier}
-                />
-              </div>
-              {/* Distance + street name */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontSize: routeError ? 15 : 30, fontWeight: 900, lineHeight: routeError ? 1.3 : 1,
-                  fontFamily: routeError ? "var(--font-sans)" : "var(--font-display)",
-                }}>
-                  {routeError ?? (currentStep ? fmtDist(distToStep) : (navRoute ? "ממשיך…" : "מחשב…"))}
-                </div>
-                {!routeError && (
-                  <div style={{
-                    fontSize: 14, fontWeight: 600, marginTop: 4,
-                    opacity: 0.85, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                  }}>
-                    {currentStep?.name || navDest.title}
-                  </div>
-                )}
-              </div>
-              {/* Voice guidance toggle */}
-              <button
-                onClick={() => setVoiceEnabled(v => !v)}
-                title={voiceEnabled ? "כבה הכוונה קולית" : "הפעל הכוונה קולית"}
-                style={{
-                  width: 40, height: 40, flexShrink: 0, borderRadius: 10,
-                  background: voiceEnabled ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.12)",
-                  border: "1.5px solid rgba(255,255,255,0.3)",
-                  color: "white", cursor: "pointer", fontSize: 17,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}
-              >{voiceEnabled ? "🔊" : "🔇"}</button>
-              {/* Cancel button */}
-              <button
-                onClick={endNavigation}
-                style={{
-                  padding: "8px 14px", borderRadius: 10, flexShrink: 0,
-                  background: "rgba(255,255,255,0.12)",
-                  border: "1.5px solid rgba(255,255,255,0.3)",
-                  color: "white", cursor: "pointer",
-                  fontFamily: "var(--font-sans)", fontWeight: 700, fontSize: 13,
-                }}
-              >✕ בטל</button>
-            </div>
-            {/* Secondary row — total distance + duration + destination name, or retry on error */}
-            <div style={{
-              padding: "6px 16px 10px",
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              borderTop: "1px solid rgba(255,255,255,0.1)",
-              fontSize: 12, opacity: 0.65,
-            }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "55%" }}>
-                {navDest.title}
-              </span>
-              {routeError ? (
-                <button
-                  onClick={retryRoute}
-                  style={{
-                    background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.35)",
-                    color: "white", borderRadius: 8, padding: "4px 10px",
-                    fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0, opacity: 1,
-                  }}
-                >↻ נסה שוב</button>
-              ) : (
-                <span style={{ flexShrink: 0 }}>
-                  {rerouting
-                    ? "🔄 מנתב מחדש…"
-                    : (navInfo ? `${fmtDist(navInfo.dist)} · ${fmtDur(navInfo.dur)}` : "מחשב מסלול…")}
-                </span>
-              )}
-            </div>
-          </div>
-        ) : (
-          /* ── Normal search + filter bar ── */
           <div style={{
             padding: "12px 16px 14px",
             background: "linear-gradient(to bottom, rgba(245,242,232,0.97) 65%, transparent)",
@@ -1124,11 +696,9 @@ function MapPageInner() {
               </div>
             )}
           </div>
-        )}
       </div>
 
       {/* ── Floating street-clearance button ── */}
-      {!navDest && (
         <div style={{
           position: "fixed",
           top: 118,
@@ -1200,7 +770,6 @@ function MapPageInner() {
             )}
           </div>
         </div>
-      )}
 
       {/* ── "רשימה" pill — centered above tab bar ── */}
       <button
