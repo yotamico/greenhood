@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { fetchAllPages } from "@/lib/fetchAllPages";
 import { TabBar } from "@/components/ui/TabBar";
+import NavArrivalNudge from "@/components/NavArrivalNudge";
 
 const CAT_EMOJI: Record<string,string> = {
   furniture:"🪑",books:"📚",lighting:"💡",plants:"🌿",
@@ -209,6 +210,7 @@ export default function FeedPage() {
       )}
 
       <TabBar />
+      <NavArrivalNudge />
     </div>
   );
 }

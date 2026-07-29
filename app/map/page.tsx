@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { fetchAllPages } from "@/lib/fetchAllPages";
 import { TabBar } from "@/components/ui/TabBar";
 import NotificationsPopup from "@/components/NotificationsPopup";
+import NavArrivalNudge from "@/components/NavArrivalNudge";
 
 /* ── dynamic import — MapLibre needs window ── */
 const GHMap = dynamic(() => import("@/components/Map/GHMapLibre"), {
@@ -76,7 +77,7 @@ function snapTo(pct: number) {
   return HIDDEN;
 }
 
-interface PendingNavTarget { lat: number; lng: number; title: string; }
+interface PendingNavTarget { itemId: string; lat: number; lng: number; title: string; }
 
 /* opens the destination directly in the user's chosen navigation app */
 function openNavApp(app: "waze" | "google", lat: number, lng: number) {
@@ -254,22 +255,48 @@ function MapPageInner() {
      `pendingNavTarget` just holds the destination while the app-choice sheet is open. */
   const [pendingNavTarget, setPendingNavTarget] = useState<PendingNavTarget | null>(null);
   const [rememberNavApp,   setRememberNavApp]   = useState(false);
+  const userPosRefForNav = useRef<[number,number] | null>(null);
+  userPosRefForNav.current = userPos;
 
-  const startNav = useCallback((lat: number, lng: number, title: string) => {
+  /* best-effort — records the nav so a delayed push + a "did you arrive?" check on the
+     user's next app open can nudge them to report the item taken. Never blocks the actual
+     handoff to Waze/Google Maps: fetch uses keepalive so it survives the page navigating
+     away, and failures here are silently ignored. */
+  const recordNavIntent = useCallback((target: PendingNavTarget) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return;
+      const origin = userPosRefForNav.current;
+      fetch("/api/nav-intent", {
+        method: "POST",
+        keepalive: true,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          itemId: target.itemId, lat: target.lat, lng: target.lng, title: target.title,
+          originLat: origin?.[0] ?? null, originLng: origin?.[1] ?? null,
+        }),
+      }).catch(() => {});
+    }).catch(() => {});
+  }, []);
+
+  const startNav = useCallback((itemId: string, lat: number, lng: number, title: string) => {
     const saved = typeof window !== "undefined" ? localStorage.getItem("navAppPref") : null;
     if (saved === "waze" || saved === "google") {
+      recordNavIntent({ itemId, lat, lng, title });
       openNavApp(saved, lat, lng);
       return;
     }
-    setPendingNavTarget({ lat, lng, title });
-  }, []);
+    setPendingNavTarget({ itemId, lat, lng, title });
+  }, [recordNavIntent]);
 
   const chooseNavApp = useCallback((app: "waze" | "google") => {
     if (rememberNavApp) localStorage.setItem("navAppPref", app);
     const target = pendingNavTarget;
     setPendingNavTarget(null);
-    if (target) openNavApp(app, target.lat, target.lng);
-  }, [rememberNavApp, pendingNavTarget]);
+    if (target) {
+      recordNavIntent(target);
+      openNavApp(app, target.lat, target.lng);
+    }
+  }, [rememberNavApp, pendingNavTarget, recordNavIntent]);
 
   /* compute scheduled streets from street_schedules (Supabase) */
   const streetModeHebrewDay = useMemo(() => {
@@ -369,14 +396,15 @@ function MapPageInner() {
     return () => navigator.geolocation.clearWatch(id);
   }, []);
 
-  /* nav_lat/nav_lng/nav_title in the URL (set by the item detail page's "נווט" button) —
-     hand off to the external nav app, then clear the params so it doesn't refire. */
+  /* nav_lat/nav_lng/nav_title/nav_item_id in the URL (set by the item detail page's "נווט"
+     button) — hand off to the external nav app, then clear the params so it doesn't refire. */
   useEffect(() => {
-    const lat   = searchParams.get("nav_lat");
-    const lng   = searchParams.get("nav_lng");
-    const title = searchParams.get("nav_title") ?? "יעד";
-    if (lat && lng) {
-      startNav(parseFloat(lat), parseFloat(lng), title);
+    const lat    = searchParams.get("nav_lat");
+    const lng    = searchParams.get("nav_lng");
+    const title  = searchParams.get("nav_title") ?? "יעד";
+    const itemId = searchParams.get("nav_item_id");
+    if (lat && lng && itemId) {
+      startNav(itemId, parseFloat(lat), parseFloat(lng), title);
       router.replace("/map");
     }
   }, [searchParams, startNav, router]);
@@ -453,9 +481,9 @@ function MapPageInner() {
     setSheetPct(prev => prev >= (DEFAULT + HIDDEN) / 2 ? DEFAULT : prev);
   }, []);
 
-  const onNavigate = useCallback((lat: number, lng: number, title: string) => {
+  const onNavigate = useCallback((itemId: string, lat: number, lng: number, title: string) => {
     setExpandedId(null);
-    startNav(lat, lng, title);
+    startNav(itemId, lat, lng, title);
   }, [startNav]);
   const hasActiveItems = useMemo(() => displayed.some(it => it.status === "active"), [displayed]);
 
@@ -537,6 +565,12 @@ function MapPageInner() {
               <input type="checkbox" checked={rememberNavApp} onChange={(e) => setRememberNavApp(e.target.checked)} />
               זכור עבורי לפעם הבאה
             </label>
+            <div style={{
+              marginTop: 14, padding: "8px 12px", borderRadius: 10,
+              background: "var(--paper-2)", fontSize: 12, fontWeight: 600, color: "var(--muted)",
+            }}>
+              🌿 אל תשכח/י לדווח שהחפץ נלקח כשתגיע/י
+            </div>
             <button onClick={() => setPendingNavTarget(null)} style={{
               width: "100%", marginTop: 14, padding: "10px", borderRadius: 12,
               border: "none", background: "transparent", color: "var(--muted)",
@@ -959,6 +993,7 @@ function MapPageInner() {
       <div style={{ zIndex: 30 }}>
         <TabBar />
       </div>
+      <NavArrivalNudge />
 
       <NotificationsPopup
         visible={showNotifPopup}
@@ -997,14 +1032,14 @@ interface CardProps {
   item: Item;
   expandedId: string | null;
   setExpandedId: React.Dispatch<React.SetStateAction<string | null>>;
-  onNavigate: (lat: number, lng: number, title: string) => void;
+  onNavigate: (itemId: string, lat: number, lng: number, title: string) => void;
 }
 
 interface ListProps {
   displayed: Item[];
   expandedId: string | null;
   setExpandedId: React.Dispatch<React.SetStateAction<string | null>>;
-  onNavigate: (lat: number, lng: number, title: string) => void;
+  onNavigate: (itemId: string, lat: number, lng: number, title: string) => void;
 }
 
 const ItemList = memo(function ItemList({ displayed, expandedId, setExpandedId, onNavigate }: ListProps) {
@@ -1237,7 +1272,7 @@ const GHItemCard = memo(function GHItemCard({ item, expandedId, setExpandedId, o
             <button
               disabled={item.lat == null || item.lng == null}
               onClick={() => item.lat != null && item.lng != null &&
-                onNavigate(item.lat, item.lng, item.title)}
+                onNavigate(item.id, item.lat, item.lng, item.title)}
               style={{
                 flex: 1, height: 44, padding: "0 16px",
                 background: "var(--primary)", color: "var(--ink)",

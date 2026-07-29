@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
+import NavArrivalNudge from "@/components/NavArrivalNudge";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 
@@ -408,6 +409,7 @@ export default function ProfilePage() {
       </div>
 
       <TabBar />
+      <NavArrivalNudge />
     </div>
   );
 }

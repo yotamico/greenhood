@@ -161,7 +161,7 @@ export default function ItemDetailPage() {
       } catch { /* ignore */ }
     }
     if (lat && lng) {
-      router.push(`/map?nav_lat=${lat}&nav_lng=${lng}&nav_title=${encodeURIComponent(item.title)}`);
+      router.push(`/map?nav_lat=${lat}&nav_lng=${lng}&nav_title=${encodeURIComponent(item.title)}&nav_item_id=${item.id}`);
     } else {
       router.push("/map");
     }
