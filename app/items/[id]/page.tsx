@@ -25,6 +25,7 @@ interface Item {
   moderation_status: "pending" | "approved" | "rejected";
   moderation_reason: string | null;
   taken_at: string | null; pending_taken_by: string | null;
+  closed_by: string | null;
 }
 
 const APPEAL_WINDOW_MS = 3 * 60 * 60 * 1000;
@@ -277,7 +278,7 @@ export default function ItemDetailPage() {
   const removed   = itemStatus === "removed";
   const isFlexible = item.pickup_day === null;
   const hasPendingRequest = !!item.pending_taken_by;
-  const withinAppealWindow = taken && !!item.taken_at && (Date.now() - new Date(item.taken_at).getTime() < APPEAL_WINDOW_MS);
+  const withinAppealWindow = taken && !!item.closed_by && !!item.taken_at && (Date.now() - new Date(item.taken_at).getTime() < APPEAL_WINDOW_MS);
   const primaryImg = activeImg ?? images.find(i => i.is_primary) ?? images[0];
   const initials  = (reporter?.name || "?").charAt(0).toUpperCase();
 

@@ -47,14 +47,18 @@ interface Item {
   lng: number | null;
   pickup_day: string | null;
   taken_at: string | null;
+  closed_by: string | null;
   item_images: { url: string; is_primary: boolean; position: number }[];
 }
 
 const APPEAL_WINDOW_MS = 3 * 60 * 60 * 1000;
 
-function isDisplayEligible(it: Pick<Item, "status" | "pickup_day" | "taken_at">, todayStr: string): boolean {
+/* owner-direct closures (closed_by is null — set only by the community
+   confirm-taken flow) drop off the map immediately; only community-confirmed
+   closures get the appeal/dispute window. */
+function isDisplayEligible(it: Pick<Item, "status" | "pickup_day" | "taken_at" | "closed_by">, todayStr: string): boolean {
   if (it.status === "active") return it.pickup_day === null || it.pickup_day >= todayStr;
-  if (it.status === "taken")  return !!it.taken_at && Date.now() - new Date(it.taken_at).getTime() < APPEAL_WINDOW_MS;
+  if (it.status === "taken")  return !!it.closed_by && !!it.taken_at && Date.now() - new Date(it.taken_at).getTime() < APPEAL_WINDOW_MS;
   return false;
 }
 
@@ -414,7 +418,7 @@ function MapPageInner() {
     if (!authed) return;
     supabase
       .from("items")
-      .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day,taken_at,item_images(url,is_primary,position)")
+      .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day,taken_at,closed_by,item_images(url,is_primary,position)")
       .in("status", ["active", "taken"])
       .eq("moderation_status", "approved")
       .order("created_at", { ascending: false })
