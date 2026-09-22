@@ -170,12 +170,12 @@ export default function ItemDetailPage() {
   }
 
   async function updateStatus(s: "active"|"taken"|"removed") {
-    const upd: Record<string, unknown> = { status: s };
+    const upd: Record<string, unknown> = { status: s, closed_by: null };
     if (s === "taken") upd.taken_at = new Date().toISOString();
     const { error } = await supabase.from("items").update(upd).eq("id", id);
     if (error) { alert("שגיאה בעדכון הסטטוס: " + error.message); return; }
     setItemStatus(s);
-    setItem(prev => prev ? { ...prev, status: s } : prev);
+    setItem(prev => prev ? { ...prev, status: s, closed_by: null } : prev);
   }
 
   async function requestClose() {
@@ -207,6 +207,7 @@ export default function ItemDetailPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.replace("/login"); return; }
+      const pendingBy = item?.pending_taken_by ?? null;
       const res = await fetch(`/api/items/${id}/confirm-taken`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
@@ -214,7 +215,7 @@ export default function ItemDetailPage() {
       });
       const data = await res.json();
       if (!data.ok) { alert(data.error ?? "שגיאה"); return; }
-      setItem(prev => prev ? { ...prev, pending_taken_by: null, status: approve ? "taken" : "active", taken_at: approve ? new Date().toISOString() : null } : prev);
+      setItem(prev => prev ? { ...prev, pending_taken_by: null, status: approve ? "taken" : "active", taken_at: approve ? new Date().toISOString() : null, closed_by: approve ? pendingBy : prev.closed_by } : prev);
       setItemStatus(approve ? "taken" : "active");
     } finally {
       setConfirming(false);
