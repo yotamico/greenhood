@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { fetchAllPages } from "@/lib/fetchAllPages";
+import { isDisplayEligible } from "@/lib/itemVisibility";
 import { TabBar } from "@/components/ui/TabBar";
 import NotificationsPopup from "@/components/NotificationsPopup";
 import NavArrivalNudge from "@/components/NavArrivalNudge";
@@ -49,17 +50,6 @@ interface Item {
   taken_at: string | null;
   closed_by: string | null;
   item_images: { url: string; is_primary: boolean; position: number }[];
-}
-
-const APPEAL_WINDOW_MS = 3 * 60 * 60 * 1000;
-
-/* owner-direct closures (closed_by is null — set only by the community
-   confirm-taken flow) drop off the map immediately; only community-confirmed
-   closures get the appeal/dispute window. */
-function isDisplayEligible(it: Pick<Item, "status" | "pickup_day" | "taken_at" | "closed_by">, todayStr: string): boolean {
-  if (it.status === "active") return it.pickup_day === null || it.pickup_day >= todayStr;
-  if (it.status === "taken")  return !!it.closed_by && !!it.taken_at && Date.now() - new Date(it.taken_at).getTime() < APPEAL_WINDOW_MS;
-  return false;
 }
 
 function dayLabel(dateStr: string): string {
@@ -419,7 +409,7 @@ function MapPageInner() {
     supabase
       .from("items")
       .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day,taken_at,closed_by,item_images(url,is_primary,position)")
-      .in("status", ["active", "taken"])
+      .or("status.eq.active,and(status.eq.taken,closed_by.not.is.null)")
       .eq("moderation_status", "approved")
       .order("created_at", { ascending: false })
       .limit(50)

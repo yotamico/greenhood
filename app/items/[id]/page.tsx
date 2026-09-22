@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { fetchAllPages } from "@/lib/fetchAllPages";
+import { APPEAL_WINDOW_MS } from "@/lib/itemVisibility";
 
 const CAT_EMOJI: Record<string, string> = {
   furniture: "🪑", books: "📚", lighting: "💡", plants: "🌿",
@@ -27,8 +28,6 @@ interface Item {
   taken_at: string | null; pending_taken_by: string | null;
   closed_by: string | null;
 }
-
-const APPEAL_WINDOW_MS = 3 * 60 * 60 * 1000;
 
 function getGpsPosition(): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
@@ -279,6 +278,8 @@ export default function ItemDetailPage() {
   const removed   = itemStatus === "removed";
   const isFlexible = item.pickup_day === null;
   const hasPendingRequest = !!item.pending_taken_by;
+  // closed_by is set only by the community confirm-taken flow, and taken_at is always
+  // written in the same update as closed_by — the !!taken_at check is purely for TS narrowing.
   const withinAppealWindow = taken && !!item.closed_by && !!item.taken_at && (Date.now() - new Date(item.taken_at).getTime() < APPEAL_WINDOW_MS);
   const primaryImg = activeImg ?? images.find(i => i.is_primary) ?? images[0];
   const initials  = (reporter?.name || "?").charAt(0).toUpperCase();
