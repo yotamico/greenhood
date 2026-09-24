@@ -11,15 +11,26 @@ const DAY_LETTERS: Record<string, string> = {
   "א": "ראשון", "ב": "שני", "ג": "שלישי", "ד": "רביעי", "ה": "חמישי", "ו": "שישי",
 };
 
+const DAY_FLAGS: [keyof InfoEntry, string][] = [
+  ["Sunday", "ראשון"], ["Monday", "שני"], ["Tuesday", "שלישי"],
+  ["Wednesday", "רביעי"], ["Thursday", "חמישי"], ["Friday", "שישי"],
+];
+
 interface StreetEntry { StreetCode: string; StreetName: string }
-interface InfoEntry { InformationTypeCode?: string; Description?: string }
+interface InfoEntry {
+  InformationTypeCode?: string; Description?: string;
+  Sunday?: boolean; Monday?: boolean; Tuesday?: boolean; Wednesday?: boolean;
+  Thursday?: boolean; Friday?: boolean; Saturday?: boolean;
+}
 
 // RiZone (my.rishonlezion.muni.il) is a React SPA backed by an Umbraco JSON API:
 // GetStreets returns every street (code + name), GetInfo?streetId= returns a mixed list of
-// notices per street; the InformationTypeCode 00003 entry holds the bulky-waste TAKEOUT days
-// inside free text like "בתים אי זוגיים בין 1-9 ביום: ב ■" — a street can have several
-// house-number segments with different days; we keep every distinct day (the per-house-range
-// detail doesn't fit street_schedules' one-day-per-row shape and is intentionally dropped).
+// notices per street; the InformationTypeCode 00003 entries hold the bulky-waste TAKEOUT days.
+// The API now returns them as boolean Sunday..Saturday flags per house-number segment (the
+// older free-text "בתים אי זוגיים בין 1-9 ביום: ב ■" Description is kept as a fallback for
+// entries that still use it). A street can have several segments with different days; we keep
+// every distinct day (the per-house-range detail doesn't fit street_schedules' one-day-per-row
+// shape and is intentionally dropped). Saturday is ignored — no takeout happens on Shabbat.
 export const rishonLezionAdapter: CityAdapter = {
   city: "ראשון לציון",
   async fetchStreets(): Promise<RawStreetRow[]> {
@@ -43,7 +54,8 @@ export const rishonLezionAdapter: CityAdapter = {
         const bulky = (data.streetsInfo ?? []).filter((i) => i.InformationTypeCode === BULKY_INFO_TYPE_CODE);
         const takeoutDays = new Set<string>();
         for (const entry of bulky) {
-          // Each house-range segment carries its own "ביום: X" — one day letter per occurrence,
+          for (const [flag, day] of DAY_FLAGS) if (entry[flag] === true) takeoutDays.add(day);
+          // Legacy free-text fallback. Each house-range segment carries its own "ביום: X" — one day letter per occurrence,
           // with a word-boundary guard so a following word starting with א-ו isn't swallowed.
           for (const m of (entry.Description ?? "").matchAll(/(?:ביום|בימים)\s*:?\s*([א-ו])(?![א-ת])/g)) {
             const day = DAY_LETTERS[m[1]];
