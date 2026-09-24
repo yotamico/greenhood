@@ -48,6 +48,7 @@ Only one map implementation and one report form exist now — if you ever see a 
 - `items` — reporter_id, title, category, condition, tags, address, lat/lng, pickup_day, status (active/taken/removed), moderation_status (pending/approved/rejected), moderation_reason, taken_at, closed_by (who ultimately closed it — may differ from reporter_id), pending_taken_by/pending_taken_at/pending_reminder_sent_at (community closure request awaiting owner confirmation — see `supabase_items_close_flow.sql`)
 - `item_close_requests` — append-only log of every valid "דווח כנלקח" attempt (item_id, user_id, lat, lng, created_at); source of truth for the per-user/H3-bucket rate limit, survives deny/reset
 - `item_dispute_reports` — "still there?" votes during the 3h post-closure appeal window (item_id, user_id, unique per pair); 2 votes reopen the item and clear the rows
+- Map and feed never query `items` globally — they call the RPC `items_nearby(p_lat, p_lng, p_radius_km)` (see `supabase_items_nearby.sql`; PostGIS `ST_DWithin` on `items.location`, GiST-indexed; map radius 15km around the user, feed 25km) and chain `.select()/.or()/.eq()/.order()/.limit()` on it. The feed falls back to the plain `items` query only when geolocation is unavailable. Gotcha: with this RPC the `.order()` column must also appear in `.select()`, or PostgREST returns 400 "column items.created_at does not exist".
 - `item_images` — item_id, url, position, is_primary
 - `profiles` — id, name, avatar_color, personas, xp, onboarded
 - `messages`, `message_reads` — chat

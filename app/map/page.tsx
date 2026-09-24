@@ -81,6 +81,10 @@ function openNavApp(app: "waze" | "google", lat: number, lng: number) {
   window.location.href = url;
 }
 
+const DEFAULT_POS: [number,number] = [31.9297, 34.8307];
+const ITEMS_RADIUS_KM = 15;
+const ITEMS_REFETCH_DIST_M = 3000;
+
 function haversine([lat1, lng1]: [number,number], [lat2, lng2]: [number,number]): number {
   const R = 6371000;
   const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
@@ -403,22 +407,37 @@ function MapPageInner() {
     }
   }, [searchParams, startNav, router]);
 
+  /* items are fetched around this point (not globally), re-centred only after the user
+     has moved far enough that the previous radius no longer covers their surroundings.
+     If no GPS fix arrives quickly, fall back to the default position so the map isn't empty. */
+  const [fetchCenter, setFetchCenter] = useState<[number,number] | null>(null);
+  useEffect(() => {
+    if (!userPos) return;
+    setFetchCenter(prev => (!prev || haversine(prev, userPos) > ITEMS_REFETCH_DIST_M) ? userPos : prev);
+  }, [userPos]);
+  useEffect(() => {
+    const t = setTimeout(() => setFetchCenter(prev => prev ?? DEFAULT_POS), 4000);
+    return () => clearTimeout(t);
+  }, []);
+
   /* fetch items */
   useEffect(() => {
-    if (!authed) return;
+    if (!authed || !fetchCenter) return;
+    let cancelled = false;
     supabase
-      .from("items")
+      .rpc("items_nearby", { p_lat: fetchCenter[0], p_lng: fetchCenter[1], p_radius_km: ITEMS_RADIUS_KM })
       .select("id,title,category,condition,address,created_at,status,lat,lng,pickup_day,taken_at,closed_by,item_images(url,is_primary,position)")
       .or("status.eq.active,and(status.eq.taken,closed_by.not.is.null)")
       .eq("moderation_status", "approved")
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data, error }) => {
-        if (error) return;
+        if (cancelled || error) return;
         const todayStr = new Date().toISOString().split("T")[0];
         setItems(((data as Item[]) ?? []).filter(it => isDisplayEligible(it, todayStr)));
       });
-  }, [authed]);
+    return () => { cancelled = true; };
+  }, [authed, fetchCenter]);
 
   /* drag logic — both callbacks are stable (no state deps, use refs instead) */
   const onDragStart = useCallback((e: React.PointerEvent) => {

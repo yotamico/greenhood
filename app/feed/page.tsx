@@ -37,6 +37,7 @@ interface Item {
 }
 
 const HEBREW_DAYS = ["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+const FEED_RADIUS_KM = 25;
 
 export default function FeedPage() {
   const router  = useRouter();
@@ -72,9 +73,24 @@ export default function FeedPage() {
     ).then(setScheduleData);
   }, []);
 
+  /* undefined = still resolving, null = location unavailable (falls back to the global feed) */
+  const [center, setCenter] = useState<[number,number] | null | undefined>(undefined);
   useEffect(() => {
     if (!authed) return;
-    supabase.from("items")
+    if (!navigator.geolocation) { setCenter(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => setCenter([pos.coords.latitude, pos.coords.longitude]),
+      () => setCenter(null),
+      { timeout: 5000, maximumAge: 5 * 60 * 1000 },
+    );
+  }, [authed]);
+
+  useEffect(() => {
+    if (!authed || center === undefined) return;
+    const base = center
+      ? supabase.rpc("items_nearby", { p_lat: center[0], p_lng: center[1], p_radius_km: FEED_RADIUS_KM })
+      : supabase.from("items");
+    base
       .select("id,title,category,condition,address,created_at,pickup_day,status,taken_at,closed_by,item_images(url,is_primary)")
       .or("status.eq.active,and(status.eq.taken,closed_by.not.is.null)")
       .eq("moderation_status","approved")
@@ -84,7 +100,7 @@ export default function FeedPage() {
         const todayStr = new Date().toISOString().split("T")[0];
         setItems(((data as Item[]) ?? []).filter(it => isDisplayEligible(it, todayStr)));
       });
-  }, [authed]);
+  }, [authed, center]);
 
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = new Date(Date.now()+86400000).toISOString().split("T")[0];
