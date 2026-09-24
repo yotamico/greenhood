@@ -36,7 +36,8 @@ Your job:
 - app/api/items/[id]/request-close/ — non-owner "דווח כנלקח" on a flexible item: server-side GPS check (≤100m) + H3 rate limit, creates a pending confirmation and pushes the owner
 - app/api/items/[id]/confirm-taken/ — owner approves/denies a pending community closure request
 - app/api/items/[id]/dispute/       — "still there?" vote during the 3h post-closure appeal window; 2 votes reopen the item
-- app/api/cron/pending-reminders/   — hourly Vercel Cron; pushes the owner once if a pending closure request has waited 24h unanswered
+- app/api/cron/pending-reminders/   — daily Vercel Cron (03:00 UTC — Hobby plan allows daily crons only, see vercel.json); pushes the owner once if a pending closure request has waited 24h unanswered, so a reminder can arrive up to ~a day late
+- app/api/cron/street-schedules-sync/ — daily Vercel Cron (04:00 UTC); syncs active cities from `city_sync_sources` in priority order until ~120s of its 300s window are used (`syncCitiesWithinBudget` in lib/streetSchedules/sync.ts). Some municipal sites block Vercel's IPs (403 / connection refused) — those cities keep their old rows and record the error in `city_sync_sources.last_sync_error`; run them locally with `npm run sync-city -- <adapter-key>`. Very large cities (Rishon ~1,200 streets) can exceed the window, so sync them locally too.
 - components/Map/GHMapLibre.tsx    — the map component actually used by app/map/page.tsx
 - components/NotificationsPopup.tsx — push notification opt-in prompt
 - components/ui/TabBar.tsx         — bottom tab bar + push subscription registration
@@ -72,7 +73,7 @@ New items land as `moderation_status: pending` and only show on the map/feed onc
 - Rate limiting on the community request path: max 3 `/api/items/[id]/request-close` calls per user per hour within the same H3 (resolution 7) cell — see `lib/geoClose.ts`.
 
 ## Collection schedule
-- Lives entirely in the `street_schedules` Supabase table (see Data model above) — not in code. 242 streets for Nes Ziona today; the `city` column exists so other cities can be added as rows without a code change.
+- Lives entirely in the `street_schedules` Supabase table (see Data model above) — not in code. 13 cities have a sync adapter (`lib/streetSchedules/adapters/`, registered in `registry.ts`, configured in `city_sync_sources` with `status='active'`); ~190 other cities are listed there as `status='manual'` with no data. Check `city_sync_sources.last_synced_at` / `last_sync_error` for freshness before trusting a city's schedule.
 - Each row has: collection_day (יום פינוי) and takeout_day (יום הוצאה)
 - Days in Hebrew: ראשון, שני, שלישי, רביעי, חמישי, שישי
 - To update a city's schedule, edit rows in `street_schedules` directly (Supabase Studio or SQL) — no redeploy needed.

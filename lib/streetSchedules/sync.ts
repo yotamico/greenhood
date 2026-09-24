@@ -122,48 +122,68 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
   }
 }
 
-// Daily cron entry point: refreshes ONE active city per invocation instead of all cities in a
-// single run - per-street sources (Rehovot ~605, Rishon ~1000+, Nes Ziona ~244 requests) can't
-// all fit in one serverless execution window. Picks by priority tier, not a flat oldest-first
-// queue: (1) never-attempted cities first (they deserve an initial try), (2) cities whose last
-// attempt errored - retried on the very next run instead of waiting a full round-robin cycle
-// behind every healthy city, (3) everything else, oldest-attempted first. Sorted client-side
-// (not via .order()) since Postgrest can't express a 3-tier computed priority; the source table
-// is tiny (one row per city) so fetching it whole is cheap.
-export async function syncNextCity(): Promise<SyncResult | null> {
+// A new city is only started while less than this much of the cron's 300s window has elapsed,
+// leaving room for it to finish (per-street sources like Rishon take ~1 min; Tel Aviv ~4 min).
+const NEW_CITY_START_BUDGET_MS = 120_000;
+
+// Daily cron entry point. Cities are worked through in priority order, one after another, until
+// the time budget runs out - each city at most once per invocation. Order: (1) never-attempted
+// cities first (they deserve an initial try), then errored and healthy cities alternating
+// (errored first - retried on the very next run instead of waiting a full round-robin cycle),
+// each group oldest-attempted first. Running several cities per invocation matters because a
+// blocked source (403 / connection refused) fails quickly: with one city per run, N permanently
+// failing cities occupied every daily slot and the healthy cities were never refreshed at all.
+// Sorted client-side (not via .order()) since Postgrest can't express this computed ordering;
+// the source table is tiny (one row per city) so fetching it whole is cheap.
+export async function syncCitiesWithinBudget(budgetMs = NEW_CITY_START_BUDGET_MS): Promise<SyncResult[]> {
+  const started = Date.now();
   const supabase = getServiceClient();
   const { data: sources, error } = await supabase
     .from("city_sync_sources")
     .select("city, adapter_key, last_attempted_at, last_sync_error")
     .eq("status", "active");
   if (error) throw error;
-  if (!sources || sources.length === 0) return null;
+  if (!sources || sources.length === 0) return [];
 
-  const priority = (s: { last_attempted_at: string | null; last_sync_error: string | null }) =>
-    s.last_attempted_at === null ? 0 : s.last_sync_error !== null ? 1 : 2;
-  const [source] = [...sources].sort((a, b) => {
-    const diff = priority(a) - priority(b);
-    if (diff !== 0) return diff;
+  type Source = (typeof sources)[number];
+  const byStaleness = (a: Source, b: Source) => {
     if (a.last_attempted_at !== b.last_attempted_at) {
       return (a.last_attempted_at ?? "").localeCompare(b.last_attempted_at ?? "");
     }
     // Final tiebreak (e.g. several cities sharing last_attempted_at = NULL) so ties resolve
     // deterministically instead of Postgrest/JS sort order leaving one city starved for days.
     return a.city.localeCompare(b.city);
-  });
+  };
+  const fresh = sources.filter((s) => s.last_attempted_at === null).sort(byStaleness);
+  const errored = sources.filter((s) => s.last_attempted_at !== null && s.last_sync_error !== null).sort(byStaleness);
+  const healthy = sources.filter((s) => s.last_attempted_at !== null && s.last_sync_error === null).sort(byStaleness);
+  // After the never-attempted cities, alternate errored/healthy (errored first) rather than
+  // draining every errored city first: a blocked source can fail slowly (connection hangs), and
+  // strictly-first would let a few of them eat the whole budget before any healthy city runs.
+  const queue: Source[] = [...fresh];
+  for (let i = 0; i < Math.max(errored.length, healthy.length); i++) {
+    if (i < errored.length) queue.push(errored[i]);
+    if (i < healthy.length) queue.push(healthy[i]);
+  }
 
   const { CITY_ADAPTERS } = await import("./registry");
-  const adapter = source.adapter_key ? CITY_ADAPTERS[source.adapter_key] : undefined;
-  if (!adapter) {
-    // syncCity is never reached in this branch, so it never gets to stamp last_attempted_at -
-    // do it here instead, otherwise a misconfigured adapter_key would loop-pick this same city
-    // forever instead of yielding to the rest of the queue.
-    const message = `No adapter registered for key "${source.adapter_key}"`;
-    await supabase
-      .from("city_sync_sources")
-      .update({ last_attempted_at: new Date().toISOString(), last_sync_error: message })
-      .eq("city", source.city);
-    return { city: source.city, ok: false, rowCount: 0, error: message };
+  const results: SyncResult[] = [];
+  for (const source of queue) {
+    if (results.length > 0 && Date.now() - started > budgetMs) break;
+    const adapter = source.adapter_key ? CITY_ADAPTERS[source.adapter_key] : undefined;
+    if (!adapter) {
+      // syncCity is never reached in this branch, so it never gets to stamp last_attempted_at -
+      // do it here instead, otherwise a misconfigured adapter_key would loop-pick this same city
+      // forever instead of yielding to the rest of the queue.
+      const message = `No adapter registered for key "${source.adapter_key}"`;
+      await supabase
+        .from("city_sync_sources")
+        .update({ last_attempted_at: new Date().toISOString(), last_sync_error: message })
+        .eq("city", source.city);
+      results.push({ city: source.city, ok: false, rowCount: 0, error: message });
+      continue;
+    }
+    results.push(await syncCity(adapter, supabase));
   }
-  return syncCity(adapter, supabase);
+  return results;
 }

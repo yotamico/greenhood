@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { syncNextCity } from "@/lib/streetSchedules/sync";
+import { syncCitiesWithinBudget } from "@/lib/streetSchedules/sync";
 
 // Per-street sources need one HTTP request per street (Rehovot ~605, Rishon ~1000+), so a
-// single run can take minutes — needs the extended execution window, and the daily schedule
-// refreshes one city per day round-robin instead of all cities at once.
+// single run can take minutes — needs the extended execution window. Each run works through
+// cities in priority order until its time budget is spent (see syncCitiesWithinBudget).
 export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const result = await syncNextCity();
-    return NextResponse.json({ ok: true, result });
+    const results = await syncCitiesWithinBudget();
+    return NextResponse.json({ ok: true, results });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
