@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { fetchAllPages } from "@/lib/fetchAllPages";
 import { isDisplayEligible } from "@/lib/itemVisibility";
+import { matchScheduledStreets } from "@/lib/streetMatch";
 import { TabBar } from "@/components/ui/TabBar";
 import NotificationsPopup from "@/components/NotificationsPopup";
 import NavArrivalNudge from "@/components/NavArrivalNudge";
@@ -130,17 +131,24 @@ const JS_DAY_TO_HEBREW: Record<number,string> = {
 const _streetCache = new Map<string, Map<string,[number,number][][]>>();
 const _streetCachePromises = new Map<string, Promise<Map<string,[number,number][][]>>>();
 
-function fetchAreaStreets(lat?: number, lng?: number): Promise<Map<string,[number,number][][]>> {
-  const key = (lat != null && lng != null) ? `${lat.toFixed(2)},${lng.toFixed(2)}` : "default";
+function fetchAreaStreets(city: string | null, lat?: number, lng?: number): Promise<Map<string,[number,number][][]>> {
+  const key = city ? `city:${city}` : (lat != null && lng != null) ? `${lat.toFixed(2)},${lng.toFixed(2)}` : "default";
   const cached = _streetCache.get(key);
   if (cached) return Promise.resolve(cached);
   const pending = _streetCachePromises.get(key);
   if (pending) return pending;
 
-  const url = (lat != null && lng != null) ? `/api/streets?lat=${lat}&lng=${lng}` : "/api/streets";
-  const promise = fetch(url)
-    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
-    .then((data: { elements?: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] }) => {
+  type StreetsResponse = { elements?: { tags?: { name?: string }; geometry?: { lat: number; lon: number }[] }[] };
+  const boxUrl = (lat != null && lng != null) ? `/api/streets?lat=${lat}&lng=${lng}` : "/api/streets";
+  const load = (url: string): Promise<StreetsResponse> =>
+    fetch(url).then(r => { if (!r.ok) throw new Error(); return r.json(); });
+  // The city URL carries no lat/lng so it is identical for every user in the city (shared CDN
+  // cache); only if OSM has no boundary for that city do we fall back to a box around the user.
+  const request = city
+    ? load(`/api/streets?city=${encodeURIComponent(city)}`).then(d => d.elements?.length ? d : load(boxUrl))
+    : load(boxUrl);
+  const promise = request
+    .then((data: StreetsResponse) => {
       const map = new Map<string,[number,number][][]>();
       for (const el of data.elements ?? []) {
         const name = el.tags?.name;
@@ -317,21 +325,15 @@ function MapPageInner() {
       setStreetCount(0);
       return;
     }
-    const scheduledNames = new Set(streetModeNames);
     setStreetLoading(true);
     setStreetError(false);
-    fetchAreaStreets(userPos?.[0], userPos?.[1]).then(streetMap => {
+    fetchAreaStreets(activeCity, userPos?.[0], userPos?.[1]).then(streetMap => {
       if (streetMap.size === 0) { setStreetError(true); setClearanceStreets([]); return; }
       const segs: [number,number][][] = [];
-      let matched = 0;
-      streetMap.forEach((ways, osmName) => {
-        const hit = [...scheduledNames].some(
-          s => osmName === s || osmName.includes(s) || s.includes(osmName)
-        );
-        if (hit) { segs.push(...ways); matched++; }
-      });
+      const matchedNames = matchScheduledStreets(streetModeNames, streetMap.keys(), streetSchedule.map(s => s.street_name));
+      matchedNames.forEach(name => segs.push(...streetMap.get(name)!));
       setClearanceStreets(segs);
-      setStreetCount(matched);
+      setStreetCount(matchedNames.size);
     }).catch(() => setStreetError(true))
       .finally(() => setStreetLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
