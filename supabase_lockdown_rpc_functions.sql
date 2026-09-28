@@ -28,6 +28,10 @@ begin
 end;
 $$;
 
+-- NOTE (2026-09-28): the line below was a no-op — see supabase_advisor_fixes.sql. Postgres
+-- grants EXECUTE to the PUBLIC pseudo-role by default, and anon/authenticated never had an
+-- EXPLICIT grant of their own; revoking FROM those roles specifically revokes nothing, since
+-- their access came entirely through PUBLIC. The real fix is `revoke ... from public`.
 revoke execute on function public.increment_xp(uuid, integer) from anon;
 
 -- 2. get_push_subscriptions_nearby: no client ever needs to call this
