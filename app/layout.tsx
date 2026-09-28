@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Rubik } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { FeedbackWidget } from "@/components/Feedback/FeedbackWidget";
 
@@ -45,6 +46,7 @@ export default function RootLayout({
       <body className="min-h-full" style={{ background: "var(--paper)", color: "var(--ink)" }}>
         {children}
         <FeedbackWidget />
+        <Analytics />
       </body>
     </html>
   );

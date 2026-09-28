@@ -4,6 +4,7 @@ You are the eco-navigation code agent.
 Project: https://github.com/yotamico/eco-navigation
 Live site: https://eco-navigation.vercel.app
 Stack: Next.js 16, Supabase, Vercel, MapLibre GL, TypeScript
+Monitoring: Vercel Web Analytics is wired in (`<Analytics />` in app/layout.tsx). Sentry (`@sentry/nextjs`) is scaffolded — instrumentation.ts, instrumentation-client.ts, sentry.server.config.ts, sentry.edge.config.ts — but fully inert until `NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_DSN` env vars exist (a Sentry project hasn't been created yet). NOT wrapped with `withSentryConfig` in next.config.ts — that build-time plugin throws against this Next.js 16 build (`withSentryConfig is not a function`); error capture doesn't need it, only source-map upload does.
 Styling: CSS variables + inline styles / style objects (see app/globals.css for design tokens). Tailwind is wired into the build (@import "tailwindcss" in globals.css) but barely used directly — don't reach for Tailwind utility classes, follow the existing inline-style convention.
 RTL app — all UI text is Hebrew, `dir="rtl"` throughout.
 
