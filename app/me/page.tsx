@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { TabBar } from "@/components/ui/TabBar";
 import NavArrivalNudge from "@/components/NavArrivalNudge";
+import AdsForYou from "@/components/AdsForYou";
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 
@@ -407,6 +408,8 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      <AdsForYou userId={user.id} />
 
       <TabBar />
       <NavArrivalNudge />

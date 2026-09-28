@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import SponsoredCard from "@/components/SponsoredCard";
 import { fetchAllPages } from "@/lib/fetchAllPages";
 import { APPEAL_WINDOW_MS } from "@/lib/itemVisibility";
 
@@ -631,6 +632,15 @@ export default function ItemDetailPage() {
             </div>
             <div style={{ marginRight:"auto", fontSize:11, color:"var(--muted)", fontWeight:600 }}>דיווח</div>
           </div>
+        )}
+
+        {/* Sponsored: matched to this item's category/keywords. Placement depends on who's viewing. */}
+        {item.moderation_status === "approved" && (
+          <SponsoredCard
+            placement={item.closed_by && item.closed_by === userId ? "collected" : isOwner ? "report" : "item"}
+            itemId={item.id}
+            style={{ marginTop:14 }}
+          />
         )}
 
       </div>

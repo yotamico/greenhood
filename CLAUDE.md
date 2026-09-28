@@ -57,6 +57,7 @@ Only one map implementation and one report form exist now — if you ever see a 
 - `saved_items` — per-user saved items
 - `ai_suggestions` — Claude Vision suggestion telemetry
 - `push_subscriptions` — user_id, endpoint, subscription (jsonb), lat, lng; RPC `get_push_subscriptions_nearby(lat,lng,radius_km)` and `increment_xp`
+- `advertisers`, `ad_campaigns`, `ad_events`, `ad_preferences` — sponsored ads (see `supabase_ads.sql`). Admin-only tables managed from greenhood-admin's "פרסום ומפרסמים" tab. The app never reads them directly: `components/SponsoredCard.tsx` calls RPC `ads_pick(placement, item_id, limit)` (matches campaign keywords/categories against the item, within `radius_km` of the business, with per-user daily cap + 30-day dismiss) and logs via `ads_log_event`. Placements: `item` / `collected` / `report` on the item page, `me` on the profile (`components/AdsForYou.tsx`, which also holds the personalized-ads opt-out). Advertisers only ever see aggregate stats.
 - `street_schedules` — city, street_name, collection_day, takeout_day, lat, lng (unique on city+street_name). Single source of truth for garbage-collection schedules, used by the map (street mode), feed, and item detail pages. Edited directly via Supabase Studio/SQL — no admin UI yet.
 
 New items land as `moderation_status: pending` and only show on the map/feed once approved via the admin moderation tab.
