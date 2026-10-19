@@ -4,8 +4,57 @@ import { mapLimit } from "../mapLimit";
 
 const BASE_URL = "https://www.tel-aviv.gov.il";
 const USER_AGENT = "eco-navigation-sync/1.0 (https://eco-navigation.vercel.app)";
-const CONCURRENCY = 5;
 const MAX_FAILURE_RATIO = 0.1;
+
+// www.tel-aviv.gov.il sits behind a Link11 WAF that rate-limits by client IP: after a burst of
+// a few hundred GetGezem calls it answers every request (the whole site, not just this API) with
+// HTTP 474 "Access Denied" for a while. At the old concurrency of 5 that hit ~600 streets in and
+// the sync aborted with 2009/2649 failed fetches. So requests are paced, and a 474 is treated as
+// a ban rather than a per-street failure: retrying through it only extends it.
+const CONCURRENCY = 2;
+const PER_REQUEST_DELAY_MS = 250;
+const BLOCK_STATUSES = new Set([403, 429, 474]);
+// Waits before re-trying a street that hit a block; if it's still blocked after these, the whole
+// fetch aborts.
+const BLOCK_BACKOFF_MS = [30_000, 60_000, 120_000];
+const TRANSIENT_RETRIES = 2;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+class BlockedError extends Error {}
+
+// Paced JSON POST. Transient failures (5xx, network errors) are retried briefly; a WAF block
+// backs off and retries, then throws BlockedError. `stopped` lets the other workers give up as
+// soon as one of them has concluded the IP is banned.
+async function postJson<T>(url: string, body: unknown, stopped: () => boolean): Promise<T> {
+  let blocks = 0;
+  let transient = 0;
+  for (;;) {
+    if (stopped()) throw new BlockedError("Tel Aviv: blocked by the site's WAF");
+    await sleep(PER_REQUEST_DELAY_MS);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json; charset=utf-8", "User-Agent": USER_AGENT },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (err) {
+      if (transient++ < TRANSIENT_RETRIES) { await sleep(2_000 * transient); continue; }
+      throw err;
+    }
+    if (BLOCK_STATUSES.has(res.status)) {
+      if (blocks >= BLOCK_BACKOFF_MS.length) {
+        throw new BlockedError(`Tel Aviv: blocked by the site's WAF (HTTP ${res.status}) — aborting; the ban is per IP and lifts after a while, sync again later`);
+      }
+      await sleep(BLOCK_BACKOFF_MS[blocks++]);
+      continue;
+    }
+    if (res.status >= 500 && transient++ < TRANSIENT_RETRIES) { await sleep(2_000 * transient); continue; }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()) as T;
+  }
+}
 
 // SharePoint list identifiers behind the street lookup on
 // /Residents/Environment/Pages/StreetsCleaning.aspx — fixed per site, embedded in that page's
@@ -67,12 +116,11 @@ function field(row: GezemRow, name: string): string {
 export const telAvivAdapter: CityAdapter = {
   city: "תל־אביב–יפו",
   async fetchStreets(): Promise<RawStreetRow[]> {
-    const listRes = await fetch(`${BASE_URL}/_layouts/15/infrastructure/handlers/StreetDetails.ashx?k=streets&street=`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json; charset=utf-8", "User-Agent": USER_AGENT },
-    });
-    if (!listRes.ok) throw new Error(`Tel Aviv street list returned ${listRes.status}`);
-    const streets: StreetEntry[] = await listRes.json();
+    let blocked: BlockedError | null = null;
+    const stopped = () => blocked !== null;
+    const streets = await postJson<StreetEntry[]>(
+      `${BASE_URL}/_layouts/15/infrastructure/handlers/StreetDetails.ashx?k=streets&street=`, undefined, stopped
+    );
     const unique = new Map<string, StreetEntry>();
     for (const s of streets) {
       const name = s.captionField?.trim();
@@ -83,14 +131,13 @@ export const telAvivAdapter: CityAdapter = {
     let failures = 0;
     const perStreet = await mapLimit([...unique.values()], CONCURRENCY, async (street) => {
       const rows: RawStreetRow[] = [];
+      if (blocked) return rows;
       try {
-        const res = await fetch(`${BASE_URL}/_vti_bin/TlvSP2013PublicSite/TlvListUtils.svc/GetGezem`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json; charset=utf-8", "User-Agent": USER_AGENT },
-          body: JSON.stringify({ streetID: street.idField, ListDS: LIST_DS, numOfItems: 2, pageUrl: "/Pages/NewsPage.aspx" }),
-        });
-        if (!res.ok) { failures++; return rows; }
-        const segments: GezemRow[] = await res.json();
+        const segments = await postJson<GezemRow[]>(
+          `${BASE_URL}/_vti_bin/TlvSP2013PublicSite/TlvListUtils.svc/GetGezem`,
+          { streetID: street.idField, ListDS: LIST_DS, numOfItems: 2, pageUrl: "/Pages/NewsPage.aspx" },
+          stopped
+        );
 
         const takeoutDays = new Set<string>();
         let lat: number | null = null;
@@ -113,12 +160,16 @@ export const telAvivAdapter: CityAdapter = {
             lng,
           });
         }
-      } catch { failures++; }
+      } catch (err) {
+        if (err instanceof BlockedError) blocked ??= err;
+        else failures++;
+      }
       return rows;
     });
+    if (blocked) throw blocked;
 
-    // A high failure rate means we were being throttled/blocked — bail out rather than let the
-    // stale-row cleanup in syncCity treat every unfetched street as "removed from the source".
+    // A high failure rate means something is wrong with the source — bail out rather than let
+    // the stale-row cleanup in syncCity treat every unfetched street as "removed from the source".
     if (failures > unique.size * MAX_FAILURE_RATIO) {
       throw new Error(`Tel Aviv: ${failures}/${unique.size} street fetches failed — aborting to avoid data loss`);
     }
