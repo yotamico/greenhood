@@ -8,7 +8,35 @@ export interface SyncResult {
   rowCount: number;
   geocoded?: number;
   missingCoords?: number;
+  geocodeCutShort?: boolean;
   error?: string;
+}
+
+export interface SyncOptions {
+  /** Epoch-ms by which the whole city sync (source fetch + geocoding) must be over. */
+  deadlineAt?: number;
+  /** Phase 2 (Nominatim geocoding of streets that still have no coordinates). Default true. */
+  geocode?: boolean;
+}
+
+// Rejects once `deadlineAt` passes, so a slow source becomes a recorded error instead of the
+// platform silently killing the whole invocation (Vercel's 300s limit left no trace in
+// city_sync_sources — Ramat Gan sat "healthy" with a months-old last_synced_at). The abandoned
+// fetch keeps running in the background until the invocation ends; nothing it does can write.
+async function withDeadline<T>(work: Promise<T>, deadlineAt: number | undefined, what: string): Promise<T> {
+  if (deadlineAt === undefined) return work;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${what}: timed out before the source finished answering — too slow from this environment (sync it with npm run sync-city instead)`)),
+      Math.max(0, deadlineAt - Date.now())
+    );
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Supabase's PostgrestError (and similar thrown API error objects) aren't `instanceof Error`,
@@ -33,7 +61,7 @@ function getServiceClient(): SupabaseClient {
 // so a city with hundreds of new streets can take many minutes; by persisting rows before
 // geocoding, an interrupted run (serverless window, killed CLI) loses nothing: the next run
 // reuses every coordinate already resolved and continues from wherever it stopped.
-export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): Promise<SyncResult> {
+export async function syncCity(adapter: CityAdapter, client?: SupabaseClient, options: SyncOptions = {}): Promise<SyncResult> {
   const supabase = client ?? getServiceClient();
   // Stamp the attempt regardless of caller (cron round-robin or a manual CLI run) - otherwise a
   // manually-synced city's last_attempted_at stays NULL forever, which the round-robin below
@@ -44,7 +72,7 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
     .update({ last_attempted_at: new Date().toISOString() })
     .eq("city", adapter.city);
   try {
-    const rawRows = await adapter.fetchStreets();
+    const rawRows = await withDeadline(adapter.fetchStreets(), options.deadlineAt, adapter.city);
     // A guard against wiping a whole city because the source site changed its markup or was
     // temporarily down: an empty result is treated as a failed sync, never as "no streets".
     if (rawRows.length === 0) throw new Error("adapter returned 0 rows - refusing to overwrite existing data");
@@ -92,9 +120,14 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
       .eq("city", adapter.city);
 
     // Phase 2: fill missing coordinates, persisting each street as soon as it resolves.
+    // Bounded by the deadline: coordinates are persisted per street, so whatever isn't reached
+    // this run is simply picked up by the next one.
     const unresolved = [...new Set(rows.filter((r) => r.lat == null || r.lng == null).map((r) => r.street_name))];
     let geocoded = 0;
-    for (const streetName of unresolved) {
+    let attempted = 0;
+    for (const streetName of options.geocode === false ? [] : unresolved) {
+      if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) break;
+      attempted++;
       const coords = await geocodeStreet(adapter.city, streetName);
       if (!coords) continue;
       const { error: coordError } = await supabase
@@ -111,6 +144,7 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
       rowCount: rows.length,
       geocoded,
       missingCoords: unresolved.length - geocoded,
+      geocodeCutShort: attempted < unresolved.length && options.geocode !== false,
     };
   } catch (err) {
     const message = errorMessage(err);
@@ -125,6 +159,11 @@ export async function syncCity(adapter: CityAdapter, client?: SupabaseClient): P
 // A new city is only started while less than this much of the cron's 300s window has elapsed,
 // leaving room for it to finish (per-street sources like Rishon take ~1 min; Tel Aviv ~4 min).
 const NEW_CITY_START_BUDGET_MS = 120_000;
+// Hard stops, measured against the 300s function limit (see maxDuration in the cron route):
+// the whole run ends 30s early so the response is always sent, and no single city may take more
+// than PER_CITY_CAP_MS, so one slow source can't consume the window the others need.
+const RUN_DEADLINE_MS = 270_000;
+const PER_CITY_CAP_MS = 150_000;
 
 // Daily cron entry point. Cities are worked through in priority order, one after another, until
 // the time budget runs out - each city at most once per invocation. Order: (1) never-attempted
@@ -183,7 +222,8 @@ export async function syncCitiesWithinBudget(budgetMs = NEW_CITY_START_BUDGET_MS
       results.push({ city: source.city, ok: false, rowCount: 0, error: message });
       continue;
     }
-    results.push(await syncCity(adapter, supabase));
+    const deadlineAt = Math.min(started + RUN_DEADLINE_MS, Date.now() + PER_CITY_CAP_MS);
+    results.push(await syncCity(adapter, supabase, { deadlineAt }));
   }
   return results;
 }
