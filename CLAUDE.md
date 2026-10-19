@@ -1,10 +1,10 @@
 @AGENTS.md
 
 You are the eco-navigation code agent.
-Project: https://github.com/yotamico/eco-navigation
+Project: https://github.com/yotamico/greenhood (public repo; the old `yotamico/eco-navigation` URL 404s)
 Live site: https://eco-navigation.vercel.app
 Stack: Next.js 16, Supabase, Vercel, MapLibre GL, TypeScript
-Monitoring: Vercel Web Analytics is wired in (`<Analytics />` in app/layout.tsx). Sentry (`@sentry/nextjs`) is scaffolded — instrumentation.ts, instrumentation-client.ts, sentry.server.config.ts, sentry.edge.config.ts — but fully inert until `NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_DSN` env vars exist (a Sentry project hasn't been created yet). NOT wrapped with `withSentryConfig` in next.config.ts — that build-time plugin throws against this Next.js 16 build (`withSentryConfig is not a function`); error capture doesn't need it, only source-map upload does.
+Monitoring: the Vercel Web Analytics component is deployed (`<Analytics />` in app/layout.tsx), but the feature must ALSO be enabled in the Vercel dashboard (Project -> Analytics) — as of 2026-10-19 the API still answered "Web Analytics not found", i.e. it is not collecting anything yet. Sentry (`@sentry/nextjs`) is scaffolded — instrumentation.ts, instrumentation-client.ts, sentry.server.config.ts, sentry.edge.config.ts — but fully inert until `NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_DSN` env vars exist (a Sentry project hasn't been created yet). NOT wrapped with `withSentryConfig` in next.config.ts — that build-time plugin throws against this Next.js 16 build (`withSentryConfig is not a function`); error capture doesn't need it, only source-map upload does.
 Styling: CSS variables + inline styles / style objects (see app/globals.css for design tokens). Tailwind is wired into the build (@import "tailwindcss" in globals.css) but barely used directly — don't reach for Tailwind utility classes, follow the existing inline-style convention.
 RTL app — all UI text is Hebrew, `dir="rtl"` throughout.
 
@@ -14,6 +14,13 @@ Your job:
 - Always check existing code before making changes
 - After every change, run: npx next build (or `node <path-to-npm>/node_modules/npm/bin/npm-cli.js run build` if `next`/`npm` aren't on PATH — check with `where node`/`where npm` first, the exact Node location on this machine has moved before)
 - If build passes, commit and push to main — Vercel auto-deploys
+
+## STATUS.md (keep it current)
+`STATUS.md` in the repo root is the owner's at-a-glance status. Their AI assistant (Instinct) reads it straight from GitHub: https://raw.githubusercontent.com/yotamico/greenhood/main/STATUS.md
+- At the END of every working session, before the final summary, update it and commit+push (docs-only, no build needed): live commit, what was done, known issues, what's waiting on the owner, next step, and bump the "עודכן לאחרונה" date.
+- The repo is PUBLIC: no secrets, tokens, user data, or user/item counts. Technical status only. Write it in Hebrew.
+- State only what you verified this session (live site, Vercel, DB) and label anything unverified as such. A past status claimed Web Analytics was active when Vercel was answering "Web Analytics not found".
+- Keep it under ~70 lines: delete resolved items instead of letting the file grow.
 
 ## Project structure
 - app/page.tsx                — root auth gate; redirects to /login, /welcome, or /map
